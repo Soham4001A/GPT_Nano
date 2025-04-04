@@ -171,11 +171,12 @@ class LMA_InitialTransform(nn.Module):
         pos_tags = torch.stack([min_t_per_latent, max_t_per_latent], dim=2)
         return z, pos_tags
 
-
-# --- Latent Attention (Rewritten for Manual MHA & Dynamic Masking w/ NaN checks) ---
+# --- Latent Attention (Rewritten for ApproxMOC Soft Masking) ---
 class LatentMetaAttention(nn.Module):
     """
-    LMA Core Logic - Manual MHA with Dynamic Masking and NaN/Inf checks.
+    LMA Core Logic - Manual MHA with Approximate Masked Origin Count (ApproxMOC)
+    Soft Masking using exponential decay based on Min/Max position tags.
+    Includes NaN/Inf checks.
     """
     def __init__(self, config, lma_latent_config: LMAConfig):
         super().__init__()
@@ -186,7 +187,7 @@ class LatentMetaAttention(nn.Module):
         if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
              raise ValueError(f"Invalid latent attention params: d={self.d_latent}, nH={self.n_head_latent}")
         self.head_dim = self.d_latent // self.n_head_latent
-        print(f"  Initializing LatentMetaAttention (Manual MHA, Dynamic Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+        print(f"  Initializing LatentMetaAttention (Manual MHA, ApproxMOC Soft Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
         self.q_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.k_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.v_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
@@ -195,75 +196,97 @@ class LatentMetaAttention(nn.Module):
         self.resid_dropout = nn.Dropout(self.dropout_rate)
         self.register_buffer("causal_mask_latent", None, persistent=False) # Not used
 
+        # --- Hyperparameter for ApproxMOC decay ---
+        # Smaller value means faster decay (stronger penalty for lookahead)
+        self.approx_moc_decay_rate = 0.8 # Tunable (e.g., 0.5, 0.8, 0.9)
+        print(f"    ApproxMOC decay rate: {self.approx_moc_decay_rate}")
+        # ---
+
     def forward(self, z, pos_tags): # Input z:(B, T_latent, d_latent), pos_tags:(B, T_latent, 2)
         B, T_latent, C_latent = z.size()
-        if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in input z!"); return torch.zeros_like(z) # Return zeros if input unstable
+        # --- Input Checks ---
+        if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in input z!"); return torch.zeros_like(z)
         if C_latent != self.d_latent: raise ValueError(f"LatentAttention C ({C_latent}) != d_latent ({self.d_latent})")
         if pos_tags is None: raise ValueError("pos_tags required for dynamic masking.")
         if pos_tags.shape[:2] != (B, T_latent) or pos_tags.shape[2] != 2: raise ValueError(f"pos_tags shape mismatch. Expected ({B}, {T_latent}, 2), got {pos_tags.shape}")
         if T_latent > self.L_latent: print(f"Warning: T_latent ({T_latent}) > max L_latent ({self.L_latent}). Truncating."); z=z[:,:self.L_latent,:]; pos_tags=pos_tags[:,:self.L_latent,:]; T_latent=self.L_latent
+        # --- End Input Checks ---
 
-        # --- Dynamic Mask Calculation ---
-        min_t = pos_tags[:, :, 0]; max_t = pos_tags[:, :, 1]
-        query_max_t = max_t.unsqueeze(2); key_min_t = min_t.unsqueeze(1)
-        dynamic_mask = key_min_t > query_max_t # True where Key starts after Query ends
-        query_pad_mask = (query_max_t == -1); key_pad_mask = (key_min_t == -1)
-        dynamic_mask = dynamic_mask | query_pad_mask | key_pad_mask # Also mask if query or key is padding
+        # --- Approximate MOC Calculation ---
+        min_t = pos_tags[:, :, 0] # (B, T_latent)
+        max_t = pos_tags[:, :, 1] # (B, T_latent)
+
+        # Expand for broadcasting: Query (dim 1), Key (dim 2)
+        query_max_t = max_t.unsqueeze(2) # (B, T_latent, 1)
+        key_min_t   = min_t.unsqueeze(1) # (B, 1, T_latent)
+        key_max_t   = max_t.unsqueeze(1) # (B, 1, T_latent)
+
+        # Estimate the number of key timesteps t_k such that query_max_t < t_k <= key_max_t
+        # lower_bound = torch.max(key_min_t - 1, query_max_t) # Effective start for counting violation
+        # approx_moc = F.relu(key_max_t - lower_bound) # Count steps strictly after query_max_t up to key_max_t
+        # Simpler calculation: Count steps from query_max + 1 up to key_max
+        approx_moc = F.relu(key_max_t - query_max_t) # How many steps the key extends beyond the query's end
+
+        # Handle padding: if query or key is padding (-1), MOC should lead to maximal penalty (or zero weight)
+        is_query_pad = (query_max_t == -1) # (B, T_latent, 1)
+        is_key_pad = (key_min_t == -1)   # (B, 1, T_latent)
+        is_pad_involved = is_query_pad | is_key_pad # (B, T_latent, T_latent) -> True if Q or K is padding
+
+        # Calculate exponential decay weights
+        # Weights = decay_rate ^ approx_moc
+        # Use .float() for the exponent base if decay_rate is not float
+        weights = torch.pow(self.approx_moc_decay_rate, approx_moc.float()) # Shape: (B, T_latent, T_latent)
+
+        # Set weight to 0 if query or key involves padding
+        weights = torch.where(is_pad_involved, torch.zeros_like(weights), weights)
+        # --- End ApproxMOC Calculation ---
 
         # --- Manual Multi-Head Attention ---
         q = self.q_proj(z); k = self.k_proj(z); v = self.v_proj(z)
         if torch.isnan(q).any() or torch.isnan(k).any() or torch.isnan(v).any(): print("NaN DETECTED in Q, K, or V!"); return torch.zeros_like(z)
 
-        q = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
-        k = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
-        v = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
+        q = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        k = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        v = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
 
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
-        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE mask!"); return torch.zeros_like(z)
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim)) # (B, nH, T_l, T_l)
+        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE weighting!"); return torch.zeros_like(z)
 
-        # (B, nH, T_latent, hs) @ (B, nH, hs, T_latent) -> (B, nH, T_latent, T_latent)
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
-
-        # Apply Dynamic Mask
-        attn_scores = attn_scores.masked_fill(dynamic_mask.unsqueeze(1), float('-inf'))
-
-        # --- Start Corrected Debug Check ---
-        # Calculate all_masked_rows per head
-        all_masked_rows_per_head = torch.all(attn_scores == float('-inf'), dim=-1) # Shape: (B, nH, T_latent)
-
-        # Reshape query_pad_mask to match all_masked_rows_per_head
-        query_pad_mask = (query_max_t == -1) # (B, T_latent, 1)
-        query_pad_mask_expanded_debug = query_pad_mask.permute(0, 2, 1).expand(-1, self.n_head_latent, -1) # (B, nH, T_latent)
-
-        # Perform the check using tensors of the same shape (B, nH, T_latent)
-        fully_masked_non_padding = all_masked_rows_per_head & (~query_pad_mask_expanded_debug)
-
-        if torch.any(fully_masked_non_padding):
-             # Sum over all dimensions (B, nH, T_latent) to get total count
-             print(f"WARNING: {torch.sum(fully_masked_non_padding)} NON-PADDING attention rows are fully masked!")
-        # --- End Corrected Debug Check ---
-
-        # Safeguarded Softmax (uses original attn_scores)
-        all_masked_rows_check_softmax = torch.all(attn_scores == float('-inf'), dim=-1) # Recalculate just in case (B, nH, T_latent)
-        # ... (rest of softmax and attention application as before) ...
-        attn_scores_safe = torch.where(attn_scores == float('-inf'), torch.finfo(attn_scores.dtype).min, attn_scores)
-        attn_probs = F.softmax(attn_scores_safe, dim=-1)
-        # Zero out probs where the input row was all -inf
-        attn_probs = torch.where(all_masked_rows_check_softmax.unsqueeze(-1), torch.zeros_like(attn_probs), attn_probs) # Use unsqueeze(-1) for broadcasting
-
+        # Apply Softmax (No hard masking needed before softmax now)
+        # Handle potential -inf scores if inputs are extreme? Usually softmax handles this.
+        # Add check just in case:
+        # attn_scores = torch.where(torch.isneginf(attn_scores), torch.finfo(attn_scores.dtype).min, attn_scores)
+        attn_probs = F.softmax(attn_scores, dim=-1) # (B, nH, T_l, T_l)
         if torch.isnan(attn_probs).any(): print("NaN DETECTED in attn_probs AFTER softmax!"); return torch.zeros_like(z)
+
+        # Apply ApproxMOC weights POST-Softmax
+        # Expand weights from (B, T_l, T_l) to (B, 1, T_l, T_l) for broadcasting
+        attn_probs = attn_probs * weights.unsqueeze(1)
+
+        # Optional: Renormalize probabilities after weighting
+        # This ensures each query's attention distribution sums to 1 again.
+        # Might be important if decay is strong.
+        renorm_factor = attn_probs.sum(dim=-1, keepdim=True)
+        attn_probs = attn_probs / (renorm_factor + 1e-6) # Add epsilon for stability
+
+        if torch.isnan(attn_probs).any(): print("NaN DETECTED in attn_probs AFTER weighting/renorm!"); return torch.zeros_like(z)
         attn_probs = self.attn_dropout(attn_probs)
 
-        y = torch.matmul(attn_probs, v)
+        # Apply Attention to V
+        y = torch.matmul(attn_probs, v) # (B, nH, T_l, hs)
         if torch.isnan(y).any() or torch.isinf(y).any(): print("NaN/Inf DETECTED in y AFTER attn @ v!"); return torch.zeros_like(z)
 
+        # Reshape and Combine Heads
         y = y.transpose(1, 2).contiguous().view(B, T_latent, self.d_latent)
+
+        # Output Projection
         y_proj = self.c_proj(y)
         if torch.isnan(y_proj).any() or torch.isinf(y_proj).any(): print("NaN/Inf DETECTED in y_proj AFTER c_proj!"); return torch.zeros_like(z)
         y = self.resid_dropout(y_proj)
         if torch.isnan(y).any() or torch.isinf(y).any(): print("NaN/Inf DETECTED in y AFTER resid_dropout!"); return torch.zeros_like(z)
 
         return y
+# --- End LatentMetaAttention Modification ---
 
 
 # --- Learnable Decoder for LMA ---
