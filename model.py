@@ -485,10 +485,18 @@ class GPT(nn.Module):
     # --- Methods: get_num_params, _init_weights, configure_optimizers, generate, etc. ---
     # (Copy previous working versions, noting LMA limitations)
     def get_num_params(self, non_embedding=True): n_params = sum(p.numel() for p in self.parameters()); n_params -= self.transformer.wpe.weight.numel() if non_embedding else 0; return n_params
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02);
-        if module.bias is not None: torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+    def _init_weights(self, module): # Added definition
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # Check if bias exists AND is not None before initializing
+            if hasattr(module, 'bias') and module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        # Add check for LayerNorm to initialize bias if it exists
+        elif isinstance(module, LayerNorm):
+             if hasattr(module, 'bias') and module.bias is not None:
+                 torch.nn.init.zeros_(module.bias)
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}; decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]; nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]; optim_groups = [{'params': decay_params, 'weight_decay': weight_decay}, {'params': nodecay_params, 'weight_decay': 0.0}]; num_decay_params = sum(p.numel() for p in decay_params); num_nodecay_params = sum(p.numel() for p in nodecay_params); print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters"); print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters"); fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters; is_cuda = device_type.startswith('cuda'); use_fused = fused_available and is_cuda; extra_args = dict(fused=True) if use_fused else dict(); optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args); print(f"using fused AdamW: {use_fused}"); return optimizer
     def crop_block_size(self, block_size): raise NotImplementedError("LMA block size cropping not fully supported")
