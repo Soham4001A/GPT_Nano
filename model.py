@@ -324,6 +324,13 @@ class MLP(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
     def forward(self, x): x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
 
+# --- GPT Class Definition (Revised for Option A - Consistent Latent Space) ---
+@dataclass
+class GPTConfig: # Unchanged
+    block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12; n_head: int = 12
+    n_embd: int = 768; dropout: float = 0.0; bias: bool = True
+    use_lma: bool = False; lma_reduction_factor: int = 2
+    
 class Block(nn.Module):
     """ Transformer Block: MHA (preserves dims) or LMA (operates in latent dims) """
     def __init__(self, config: GPTConfig, is_lma=False, lma_config: LMAConfig = None):
@@ -367,12 +374,6 @@ class Block(nn.Module):
 
         return block_output # (B, L_new, d_new) for LMA, (B, T, d0) for MHA
 
-# --- GPT Class Definition (Revised for Option A - Consistent Latent Space) ---
-@dataclass
-class GPTConfig: # Unchanged
-    block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12; n_head: int = 12
-    n_embd: int = 768; dropout: float = 0.0; bias: bool = True
-    use_lma: bool = False; lma_reduction_factor: int = 2
 
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
