@@ -513,52 +513,52 @@ class GPT(nn.Module):
         b, t = idx.size()
         # --- Input length handling ---
         if t > self.config.block_size:
-            # If input T is longer than max pos embedding, crop idx FROM THE END
+            # Crop idx from the end if longer than block_size
             idx = idx[:, -self.config.block_size:]
             t = self.config.block_size
             print(f"Warning: Input sequence length {idx.size(1)} > block size {self.config.block_size}. Cropped to {t}.")
-            # Targets must also be cropped if provided, matching the input crop
             if targets is not None:
                 targets = targets[:, -self.config.block_size:]
                 if targets.size(1) != t:
                     raise ValueError("Cropped targets length mismatch after cropping input idx")
         elif t < self.config.block_size:
-            # Handle sequences shorter than block_size (common during generation start)
-            # Positional embeddings handle this naturally up to block_size
+            # For sequences shorter than block_size, positional embeddings handle it naturally.
             pass
-        # assert t <= self.config.block_size # Covered by crop
 
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+        pos = torch.arange(0, t, dtype=torch.long, device=device)  # Shape: (t)
 
-        # forward the GPT model itself
-        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb) # (b, t, n_embd)
+        # Forward through embeddings
+        tok_emb = self.transformer.wte(idx)           # (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos)             # (t, n_embd)
+        x = self.transformer.drop(tok_emb + pos_emb)    # (b, t, n_embd)
 
-        # Apply transformer blocks sequentially
-        current_shape = x.shape # Track shape explicitly for clarity
+        # Pass through transformer blocks sequentially
         for i, block in enumerate(self.transformer.h):
-             # Check if block input requirements match current tensor shape
-             # Note: For LMA, Block init receives L=config.block_size, d0=current_dim
-             # But Block forward must handle input T <= config.block_size
-             # Need to ensure LMA layer inside handles T < L correctly (mask slicing)
-             # print(f" Block {i} Input: {current_shape}") # Debug
-             x = block(x)
-             current_shape = x.shape
-             # print(f" Block {i} Output: {current_shape}") # Debug
+            x = block(x)
 
-        x = self.transformer.ln_f(x) # Applied to final block output dim and sequence length
+        x = self.transformer.ln_f(x)  # Apply final layer norm
+
+        # Upsampling: if targets are provided and sequence lengths differ, upsample x
+        if targets is not None and x.size(1) != targets.size(1):
+            target_len = targets.size(1)
+            latent_len = x.size(1)
+            if target_len % latent_len != 0:
+                raise RuntimeError(
+                    f"Target sequence length ({target_len}) is not an integer multiple of latent sequence length ({latent_len})."
+                )
+            upsample_factor = target_len // latent_len
+            x = x.repeat_interleave(upsample_factor, dim=1)
 
         if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x) # (b, t, vocab_size)
-            # Crucially, logits and targets must have the same sequence length T
+            logits = self.lm_head(x)  # (b, t, vocab_size) after upsampling
             if logits.size(1) != targets.size(1):
-                 raise RuntimeError(f"Loss Calculation Error: Logits seq len {logits.size(1)} != Targets seq len {targets.size(1)}")
+                raise RuntimeError(
+                    f"Loss Calculation Error: Logits seq len {logits.size(1)} != Targets seq len {targets.size(1)}"
+                )
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # (b, 1, vocab_size)
+            # Inference: use only the last token's logits for efficiency
+            logits = self.lm_head(x[:, [-1], :])  # (b, 1, vocab_size)
             loss = None
 
         return logits, loss
