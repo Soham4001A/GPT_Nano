@@ -409,6 +409,10 @@ while True:
     if iter_num % eval_interval == 0 and master_process:
         # Set model to eval mode before estimating loss
         model.eval()
+        # --- Add Debug Print ---
+        print(f"DEBUG: Type of ctx BEFORE calling estimate_loss: {type(ctx)}")
+        print(f"DEBUG: Does ctx have __enter__? {'__enter__' in dir(ctx)}")
+        # --- End Debug Print ---
         losses = estimate_loss(model, ctx) # <-- PASS model and ctx
         model.train() # Set back to train mode after evaluation
         print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
