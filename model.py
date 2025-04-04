@@ -559,7 +559,7 @@ class GPT(nn.Module):
             if logits.size(1) != targets.size(1):
                 target_len = targets.size(1)    # Original T
                 latent_len = logits.size(1)     # t_final (L_new after blocks)
-                print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len}. Upsampling logits...")
+                #print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len}. Upsampling logits...")
                 if latent_len == 0: raise RuntimeError("Latent sequence length is zero!")
                 if target_len % latent_len != 0: raise RuntimeError(f"Cannot upsample: Target L ({target_len}) not multiple of Latent L ({latent_len}).")
                 upsample_factor = target_len // latent_len
