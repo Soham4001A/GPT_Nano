@@ -1077,7 +1077,7 @@ def get_most_likely_row(tokens, mask, logits):
     return pred_norm
 
 @torch.no_grad()
-def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+def evaluate_hellaswag(model, enc, ctx, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
     """ Runs HellaSwag evaluation and returns accuracy """
     import json
     import tqdm
