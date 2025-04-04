@@ -66,12 +66,21 @@ decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-# DDP settings
-backend = 'nccl' # 'nccl', 'gloo', etc.
-# system
-device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
-dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
-compile = True # use PyTorch 2.0 to compile the model to be faster
+if torch.cuda.is_available():
+    device = 'cuda'
+    backend = 'nccl' # Use NCCL if CUDA is available and PyTorch supports it
+elif torch.backends.mps.is_available():
+    device = 'mps'
+    backend = 'gloo' # Gloo is often used for CPU/MPS, check if needed for MPS DDP
+    print("WARNING: Using MPS device. DDP support might be limited or experimental.")
+else:
+    device = 'cpu'
+    backend = 'gloo' # Use Gloo for CPU distributed training
+
+dtype = 'bfloat16' if device == 'cuda' and torch.cuda.is_bf16_supported() else 'float16'
+# Disable compile on MPS for now, might have issues
+# compile = True if device == 'cuda' else False # Original compile logic
+compile = False # Disable torch.compile initially for easier debugging across devices
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -81,35 +90,62 @@ config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # various inits, derived attributes, I/O setup
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
 if ddp:
-    init_process_group(backend=backend)
+    # Check backend compatibility BEFORE init_process_group
+    if backend == 'nccl' and not torch.cuda.is_available():
+        print("Warning: NCCL backend specified but CUDA not available. Switching to Gloo.")
+        backend = 'gloo'
+    elif backend == 'nccl' and device == 'mps':
+        print("Warning: NCCL backend not supported on MPS. Switching to Gloo.")
+        backend = 'gloo' # Or potentially skip DDP if Gloo isn't intended for MPS DDP
+
+    init_process_group(backend=backend) # Use the potentially adjusted backend
     ddp_rank = int(os.environ['RANK'])
     ddp_local_rank = int(os.environ['LOCAL_RANK'])
     ddp_world_size = int(os.environ['WORLD_SIZE'])
-    device = f'cuda:{ddp_local_rank}'
-    torch.cuda.set_device(device)
-    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
-    seed_offset = ddp_rank # each process gets a different seed
-    # world_size number of processes will be training simultaneously, so we can scale
-    # down the desired gradient accumulation iterations per process proportionally
+    if device == 'cuda': # Set device only if using CUDA
+        device = f'cuda:{ddp_local_rank}'
+        torch.cuda.set_device(device)
+    # If using MPS/CPU in DDP, device is already set globally, no local rank needed for device ID
+    master_process = ddp_rank == 0
+    seed_offset = ddp_rank
     assert gradient_accumulation_steps % ddp_world_size == 0
     gradient_accumulation_steps //= ddp_world_size
 else:
-    # if not ddp, we are running on a single gpu, and one process
+    # Non-DDP run, device is determined above
     master_process = True
     seed_offset = 0
     ddp_world_size = 1
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
+print(f"Using device: {device}, Backend: {backend if ddp else 'N/A'}") # Log device/backend
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
-# note: float16 data type will automatically use a GradScaler
-ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+if 'cuda' in device:
+    device_type = 'cuda'
+elif 'mps' in device:
+    device_type = 'mps'
+    print("Warning: MPS device type detected, Torch Autocast might behave differently.")
+    # MPS might not fully support bfloat16/float16 autocast like CUDA
+    # Let's default to float32 on MPS for stability initially
+    ptdtype = torch.float32
+    dtype = 'float32' # Override dtype
+    ctx = nullcontext() # Disable autocast for MPS initially
+    print("Overriding dtype to float32 and disabling Autocast for MPS device.")
+else:
+    device_type = 'cpu'
+    ptdtype = torch.float32 # CPU uses float32
+    dtype = 'float32'
+    ctx = nullcontext() # No autocast needed/supported for CPU
+
+# Re-check ptdtype based on potentially overridden dtype
+if device_type != 'mps': # Re-evaluate ptdype unless it was forced to float32 for MPS
+    ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+# Update context manager based on final device_type and ptdtype
+ctx = nullcontext() if device_type in ['cpu', 'mps'] else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # poor man's data loader
 data_dir = os.path.join('data', dataset)
@@ -144,7 +180,7 @@ if os.path.exists(meta_path):
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
 # model init
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size, use_lma = True,
                   bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line
 if init_from == 'scratch':
     # init a new model from scratch
