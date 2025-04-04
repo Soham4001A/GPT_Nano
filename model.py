@@ -1,20 +1,19 @@
-# ----- model.py -----
 """
 Full definition of a GPT Language Model, all of it in this single file.
-Incorporates Latent Meta Attention (LMA) as an alternative attention mechanism,
-including an Initial Transform, Latent Attention Blocks, and a Learnable Decoder.
+Incorporates Latent Meta Attention (LMA) with Dynamic Causality Masking
+based on propagated Min/Max original position tags.
 """
 
 import math
 import inspect
-from dataclasses import dataclass, field # Import field
+from dataclasses import dataclass, field
 import os
 import tqdm, json
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
-from contextlib import nullcontext # Make sure nullcontext is imported if used
+from contextlib import nullcontext
 from tiktoken.core import Encoding
 
 # -----------------------------------------------------------------------------
@@ -23,133 +22,27 @@ from tiktoken.core import Encoding
 
 def find_closest_divisor(total_value, target_divisor, max_delta=100):
     """
-    Finds a divisor of total_value that is closest to target_divisor (PyTorch/NumPy version).
+    Finds a divisor of total_value that is closest to target_divisor.
     """
-    if not isinstance(total_value, int) or total_value <= 0:
-        raise ValueError(f"total_value ({total_value}) must be a positive integer.")
-    if not isinstance(target_divisor, int) or target_divisor <= 0:
-        # Allow target_divisor <= 0, but start search from 1
-        print(f"Warning: find_closest_divisor target_divisor ({target_divisor}) is not positive. Starting search near 1.")
-        target_divisor = max(1, target_divisor) # Ensure search starts positively
-    if not isinstance(max_delta, int) or max_delta < 0:
-        raise ValueError(f"max_delta ({max_delta}) must be non-negative.")
+    if not isinstance(total_value, int) or total_value <= 0: raise ValueError(f"total_value ({total_value}) must be positive integer.")
+    if not isinstance(target_divisor, int) or target_divisor <= 0: target_divisor = max(1, target_divisor) # Start search near 1 if target invalid
+    if not isinstance(max_delta, int) or max_delta < 0: raise ValueError(f"max_delta ({max_delta}) must be non-negative.")
+    if total_value == 0: return 1
 
-    if total_value == 0: # Handle edge case
-        return 1 # Or raise error? Returning 1 might be safer downstream.
-
-    # Check target directly only if > 0 and it divides total_value
-    if target_divisor > 0 and total_value % target_divisor == 0:
-        return target_divisor
-
-    # Ensure search_start is at least 1
+    if target_divisor > 0 and total_value % target_divisor == 0: return target_divisor
     search_start = max(1, target_divisor)
-
     for delta in range(1, max_delta + 1):
         candidate_minus = search_start - delta
-        if candidate_minus > 0 and total_value % candidate_minus == 0:
-            return candidate_minus
+        if candidate_minus > 0 and total_value % candidate_minus == 0: return candidate_minus
         candidate_plus = search_start + delta
-        # Check divisibility only for positive candidates (though total_value > 0 assumed)
-        if candidate_plus > 0 and total_value % candidate_plus == 0:
-            return candidate_plus
-
-    # Fallback if no divisor found nearby: Find *any* divisor.
-    # Start from 1 up to sqrt(total_value)
+        if candidate_plus > 0 and total_value % candidate_plus == 0: return candidate_plus
     for i in range(1, int(math.sqrt(total_value)) + 1):
-        if total_value % i == 0:
-            print(f"Warning: No divisor found near {target_divisor}. Using {i} as a fallback divisor for {total_value}.")
-            return i
-    # If total_value is prime > 1, its only divisor other than 1 is itself
-    if total_value > 1:
-        print(f"Warning: No divisor found near {target_divisor}. Using {total_value} as a fallback divisor.")
-        return total_value
+        if total_value % i == 0: print(f"Warning: No divisor found near {target_divisor}. Using {i} as fallback."); return i
+    if total_value > 1: print(f"Warning: No divisor found near {target_divisor}. Using {total_value} as fallback."); return total_value
+    raise ValueError(f"Could not find any valid divisor for {total_value} near {target_divisor}.")
 
-    # If total_value was 1, the loop range(1, 1+1) finds 1.
-    # If total_value was 0, we returned 1 earlier.
-    # This final raise should theoretically not be reached if total_value > 0.
-    raise ValueError(
-        f"Could not find any valid divisor for {total_value} near {target_divisor} "
-        f"(within +/- {max_delta}) or as fallback. Check L, d0, or target L_new."
-    )
-
-
-def get_lma_causal_mask(L, n_h, L_new, device):
-    """
-    Calculates the causal mask for the LMA latent attention space (PyTorch version).
-    Mask=True means attention is prevented.
-    `L` and `n_h` refer to the *original* dimensions before the transformation that produced L_new.
-    """
-    # Basic validation
-    if L <= 0: L = 1 # Prevent division by zero if original L was invalid
-    if n_h <= 0: n_h = 1
-    if L_new <= 0:
-        print(f"Warning: Invalid L_new={L_new} for mask generation. Returning None.")
-        return None
-
-    L_prime = L * n_h # Total number of 'items' after head stacking
-    if L_prime == 0 :
-        print(f"Warning: L*nh ({L_prime}) is zero. Cannot generate mask. Returning None.")
-        return None
-
-    # Calculate the effective stride: how many items in L_prime map to one item in L_new
-    # Handle potential non-divisibility cleanly
-    if L_new == 0: # Avoid division by zero
-        print(f"Warning: L_new is zero. Cannot calculate stride. Returning None.")
-        return None
-    elif L_prime < L_new:
-        # This case implies L_new was chosen larger than L*nh, which shouldn't happen
-        # if L_new is derived correctly from L*d0. But handle defensively.
-        print(f"Warning: L*nh ({L_prime}) < L_new ({L_new}). Mask generation assumes stride=1.")
-        k_stride = 1
-    else:
-        # This is the expected calculation based on how L_new and C_new divide L*d0
-        # We assume the reduction from L*nh to L_new is proportional.
-        # Total features = L * d0. L_new * C_new = L * d0.
-        # L_prime = L * n_h. d_k = d0 / n_h.
-        # Stride should relate L_prime to L_new.
-        k_stride = L_prime / L_new # Use float division initially for accuracy
-        # Check if stride makes sense or if L*nh isn't divisible by L_new
-        if L_prime % L_new != 0 :
-            print(f"Warning: L*nh ({L_prime}) not perfectly divisible by L_new ({L_new}). Mask uses effective float stride {k_stride:.2f}.")
-            # Keep k_stride as float for calculations, convert range endpoints to int
-
-    # Calculate the maximum original sequence index (0 to L-1) associated with each latent position
-    max_orig_index_per_latent_pos = [-1] * L_new
-    for i_new in range(L_new):
-        # Calculate the range in L_prime corresponding to this latent position i_new
-        p_start_float = i_new * k_stride
-        p_end_float = (i_new + 1) * k_stride
-
-        # Convert to integer indices for range iteration (exclusive end)
-        p_start = int(math.floor(p_start_float))
-        p_end = int(math.ceil(p_end_float)) # Use ceil to be inclusive of the boundary
-        p_end = min(p_end, L_prime) # Ensure it doesn't exceed L_prime
-
-        max_orig_l = -1
-        if p_start < p_end: # Check if the range is valid
-            # Iterate through the corresponding positions in the stacked view (L*nh)
-            for p in range(p_start, p_end):
-                # Find the original sequence index (modulo L) for this stacked position
-                orig_l_index = p % L
-                max_orig_l = max(max_orig_l, orig_l_index)
-
-        max_orig_index_per_latent_pos[i_new] = max_orig_l
-
-    # Create boolean mask (True means mask out)
-    mask = torch.zeros((L_new, L_new), device=device, dtype=torch.bool)
-    for i_new in range(L_new): # Query position in latent space
-        query_max_orig = max_orig_index_per_latent_pos[i_new]
-        if query_max_orig == -1: continue # Should not happen if L > 0
-
-        for j_new in range(L_new): # Key position in latent space
-            key_max_orig = max_orig_index_per_latent_pos[j_new]
-            if key_max_orig == -1: continue
-
-            # Mask if the key's latest original index is *later* than the query's latest original index
-            if key_max_orig > query_max_orig:
-                mask[i_new, j_new] = True
-
-    return mask
+# get_lma_causal_mask is no longer needed for dynamic masking, can be removed or kept for reference.
+# def get_lma_causal_mask(L, n_h, L_new, device): ...
 
 # -----------------------------------------------------------------------------
 # Core Model Components
@@ -165,396 +58,310 @@ class LayerNorm(nn.Module):
     def forward(self, input):
         expected_dim = self.weight.shape[0]
         if input.size(-1) != expected_dim:
-             # Try to get module hierarchy for better error message
-             name_parts = []
-             curr = self
-             while hasattr(curr, '_parent_module_and_name'): # Heuristic to find parent names
-                 parent, name = curr._parent_module_and_name
-                 name_parts.append(name)
-                 if parent is None or not isinstance(parent, nn.Module): break
-                 curr = parent
-             layer_name_str = ".".join(reversed(name_parts)) if name_parts else "UnknownLayerNorm"
-
-             print(f"ERROR in LayerNorm ({layer_name_str}): Input dim {input.size(-1)} != Weight dim {expected_dim}")
-             # Provide more context about input shape
-             print(f"Input shape: {input.shape}")
-             raise RuntimeError(f"LayerNorm ({layer_name_str}) input dim ({input.size(-1)}) mismatch with weight dim ({expected_dim})")
-        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+             # Simplified error message
+             raise RuntimeError(f"LayerNorm input dim ({input.size(-1)}) mismatch weight dim ({expected_dim}) Input shape: {input.shape}")
+        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5) # Keep epsilon 1e-5 for now
 
 @dataclass
 class LMAConfig:
     """ Configuration specific to the LMA layer internals. """
-    d0: int # Input dimension to the transformation/attention layer
-    L: int  # Input sequence length to the transformation/attention layer
-    n_head_stacking: int # Number of heads used for stacking (Stage 2a) before THIS layer
-    target_L_new: int # Target latent sequence length
-    d_new: int        # Target latent dimension
-    n_head_latent: int # Number of heads for attention *within* the latent space
-
-    # Fields calculated after initialization
-    L_new: int = field(init=False) # Actual latent sequence length (divisor of L*d0)
-    C_new: int = field(init=False) # Dimension of chunks before latent embedding (L*d0 / L_new)
+    d0: int
+    L: int
+    n_head_stacking: int
+    target_L_new: int
+    d_new: int
+    n_head_latent: int
+    L_new: int = field(init=False)
+    C_new: int = field(init=False)
 
     def __post_init__(self):
-        # Validate inputs
-        if self.L <= 0: raise ValueError(f"LMAConfig Error: L ({self.L}) must be positive.")
-        if self.d0 <= 0: raise ValueError(f"LMAConfig Error: d0 ({self.d0}) must be positive.")
-        if self.n_head_stacking <= 0: raise ValueError(f"LMAConfig Error: n_head_stacking ({self.n_head_stacking}) must be positive.")
-        if self.target_L_new <= 0: raise ValueError(f"LMAConfig Error: target_L_new ({self.target_L_new}) must be positive.")
-        if self.d_new <= 0: raise ValueError(f"LMAConfig Error: d_new ({self.d_new}) must be positive.")
-        if self.n_head_latent <= 0: raise ValueError(f"LMAConfig Error: n_head_latent ({self.n_head_latent}) must be positive.")
+        if self.L <= 0 or self.d0 <= 0 or self.n_head_stacking <= 0 or \
+           self.target_L_new <= 0 or self.d_new <= 0 or self.n_head_latent <= 0:
+            raise ValueError("All LMAConfig inputs must be positive.")
+        if self.d0 % self.n_head_stacking != 0: raise ValueError(f"LMA Config Error: d0 ({self.d0}) not divisible by n_head_stacking ({self.n_head_stacking}).")
+        if self.d_new % self.n_head_latent != 0: raise ValueError(f"LMA Config Error: d_new ({self.d_new}) not divisible by n_head_latent ({self.n_head_latent}).")
 
-        # Calculate total features based on INPUT L and d0
         total_features = self.L * self.d0
-        if total_features == 0:
-             # This shouldn't happen due to checks above, but safeguard
-             print(f"Warning: LMAConfig total features (L*d0) is zero. Setting L_new/C_new to 1.")
-             self.L_new = 1
-             self.C_new = 1
-             return # Exit early
-
-        # Calculate L_new (actual latent sequence length) and C_new (intermediate chunk dim)
+        if total_features == 0: raise ValueError("LMAConfig total features (L*d0) cannot be zero.")
         try:
-            # Find the closest divisor to target_L_new for the total features
             self.L_new = find_closest_divisor(total_features, self.target_L_new)
-            if self.L_new != self.target_L_new:
-                 print(f"LMAConfig ADJUSTMENT: Target L_new ({self.target_L_new}) changed to {self.L_new} to divide total features ({total_features}).")
-
-            # Check if L_new is valid before division
-            if self.L_new <= 0:
-                raise ValueError(f"Calculated L_new ({self.L_new}) is not positive.")
-
-            # Calculate C_new (must be integer division)
-            if total_features % self.L_new != 0:
-                 # This should NOT happen if find_closest_divisor worked correctly
-                 raise RuntimeError(f"Internal Error: total_features ({total_features}) not divisible by calculated L_new ({self.L_new})")
+            if self.L_new != self.target_L_new: print(f"LMAConfig ADJUSTMENT: Target L_new ({self.target_L_new}) changed to {self.L_new}.")
+            if self.L_new <= 0: raise ValueError(f"Calculated L_new ({self.L_new}) is not positive.")
+            if total_features % self.L_new != 0: raise RuntimeError(f"Internal Error: total_features ({total_features}) not divisible by calculated L_new ({self.L_new})")
             self.C_new = total_features // self.L_new
+            if self.C_new <= 0: raise ValueError(f"Calculated C_new ({self.C_new}) is not positive.")
+        except ValueError as e: raise ValueError(f"LMA Config Error calculating L_new/C_new: {e}") from e
 
-            if self.C_new <= 0:
-                raise ValueError(f"Calculated C_new ({self.C_new}) is not positive.")
-
-        except ValueError as e:
-            # Provide more context in the error message
-            raise ValueError(f"LMA Config Error calculating L_new/C_new from L={self.L}, d0={self.d0}, target_L_new={self.target_L_new}: {e}") from e
-
-        # Validate d_new divisibility by n_head_latent AFTER d_new is confirmed positive
-        if self.d_new % self.n_head_latent != 0:
-             raise ValueError(f"LMA Config Error: d_new ({self.d_new}) must be divisible by n_head_latent ({self.n_head_latent}).")
-        # Validate d0 divisibility by n_head_stacking (relevant for head stacking step)
-        if self.d0 % self.n_head_stacking != 0:
-             raise ValueError(f"LMA Config Error: d0 ({self.d0}) must be divisible by n_head_stacking ({self.n_head_stacking}).")
-
-
-class LatentMetaAttention(nn.Module):
-    """ LMA Core Logic - Operates entirely in the PRE-EXISTING latent space """
-    def __init__(self, config, lma_latent_config: LMAConfig):
-        # lma_latent_config defines the space this attention operates in (L_new, d_new)
-        # AND contains info about the *original* space (L, n_head_stacking) for mask calculation.
-        super().__init__()
-        self.config = config # Main GPTConfig
-        self.lma_config = lma_latent_config # LMAConfig specific to this layer
-
-        # Dimensions this attention layer operates on:
-        self.d_latent = lma_latent_config.d_new # Dimension of the latent space
-        self.L_latent = lma_latent_config.L_new # Expected max length of the latent sequence
-        self.n_head_latent = lma_latent_config.n_head_latent
-        self.bias = config.bias
-        self.dropout = config.dropout
-
-        # Validate operational dimensions
-        if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
-             raise ValueError(f"Invalid latent attention params: d_latent={self.d_latent}, n_head_latent={self.n_head_latent}")
-
-        print(f"  Initializing LatentMetaAttention Layer: Operates on Latent(L_latent={self.L_latent}, d_latent={self.d_latent}), Heads={self.n_head_latent}")
-
-        # --- Latent Attention Layers (QKV projections + MHA) ---
-        # These layers operate directly on the input Z (which has shape B, T_latent, d_latent)
-        self.q_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
-        self.k_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
-        self.v_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
-
-        # Using PyTorch's MultiheadAttention for the core operation in the latent space
-        self.latent_attn = nn.MultiheadAttention(
-            embed_dim=self.d_latent,
-            num_heads=self.n_head_latent,
-            dropout=self.dropout,
-            bias=self.bias,
-            batch_first=True # Expect input as (B, T_latent, d_latent)
-        )
-        # Output projection after latent attention
-        self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
-        self.resid_dropout = nn.Dropout(self.dropout)
-
-        # # --- Causal Mask ---
-        # # The mask needs to be generated based on the *original* L and n_h
-        # # that *produced* this latent space. LMAConfig provides these.
-        # self.original_L_for_mask = lma_latent_config.L # Original L before transform
-        # self.original_nH_for_mask = lma_latent_config.n_head_stacking # Original nH before transform
-
-        # # Generate mask once on CPU, register as buffer. Moved device transfer to forward.
-        # try:
-        #     print(f"  LMA Attn: Generating causal mask based on original L={self.original_L_for_mask}, nH={self.original_nH_for_mask} for L_latent={self.L_latent}")
-        #     # Use the L and n_head_stacking from the config that *defined* this latent space
-        #     lma_mask = get_lma_causal_mask(
-        #         L=self.original_L_for_mask,
-        #         n_h=self.original_nH_for_mask,
-        #         L_new=self.L_latent, # Target latent length
-        #         device='cpu' # Create on CPU initially
-        #     )
-        #     if lma_mask is None:
-        #          print("  LMA Attn: WARNING - Causal mask generation failed. Attention will not be causal.")
-        #          self.register_buffer("causal_mask_latent", None, persistent=False)
-        #     else:
-        #          # Mask shape should be (L_latent, L_latent)
-        #          assert lma_mask.shape == (self.L_latent, self.L_latent)
-        #          self.register_buffer("causal_mask_latent", lma_mask, persistent=False)
-        #          print(f"  LMA Attn: Registered latent causal mask ({self.L_latent}x{self.L_latent})")
-
-        # except Exception as e:
-        #     print(f"ERROR generating LMA causal mask: {e}")
-        #     import traceback; traceback.print_exc()
-        #     self.register_buffer("causal_mask_latent", None, persistent=False)
-        # --- ADD THIS INSTEAD ---
-        print(f"  LMA Attn: Using SIMPLE TRIL mask for latent sequence (L_latent={self.L_latent})")
-        # Create a standard lower-triangular mask of size (L_latent, L_latent)
-        simple_mask = torch.tril(torch.ones(self.L_latent, self.L_latent, dtype=torch.bool, device='cpu'))
-        # nn.MultiheadAttention expects True where positions are *masked out* (prevented from attending).
-        # So, we need the *upper* triangle to be True. Invert the lower-triangular mask.
-        simple_mask_inverted = ~simple_mask
-        self.register_buffer("causal_mask_latent", simple_mask_inverted, persistent=False)
-
-    def forward(self, z): # Input z is ALREADY LATENT (B, T_latent, d_latent)
-        B, T_latent, C_latent = z.size()
-
-        # Assert input matches expected latent dimensions, allow shorter sequence T_latent <= L_latent
-        if T_latent > self.L_latent:
-             # This shouldn't happen if padding/truncation works correctly upstream
-             print(f"Warning: LatentMetaAttention input T_latent ({T_latent}) > configured L_latent ({self.L_latent}). Truncating.")
-             z = z[:, :self.L_latent, :]
-             T_latent = self.L_latent
-        if C_latent != self.d_latent:
-            raise ValueError(f"LatentMetaAttention input C ({C_latent}) != configured d_latent ({self.d_latent})")
-
-        # --- Latent Attention ---
-        q_prime = self.q_proj(z)
-        k_prime = self.k_proj(z)
-        v_prime = self.v_proj(z)
-
-        # Prepare attention mask
-        attn_mask_to_use = None
-        if self.causal_mask_latent is not None:
-            # Slice the pre-computed mask based on the *current* latent sequence length T_latent
-            # Mask needs to be (T_latent, T_latent)
-            # Ensure T_latent is not larger than the mask dimension L_latent
-            current_T_latent_for_mask = min(T_latent, self.L_latent)
-            attn_mask_slice = self.causal_mask_latent[:current_T_latent_for_mask, :current_T_latent_for_mask]
-
-            # Move mask to the correct device
-            attn_mask_to_use = attn_mask_slice.to(q_prime.device)
-
-            # MHA expects True where attention should be *prevented*.
-            # Our get_lma_causal_mask already returns True for masked positions.
-
-        # Apply MultiheadAttention
-        # is_causal=False because we provide an explicit mask
-        attn_output, _ = self.latent_attn(
-            q_prime, k_prime, v_prime,
-            attn_mask=attn_mask_to_use,
-            need_weights=False, # Don't need attention weights output
-            is_causal=False # We handle causality via attn_mask
-        )
-        # attn_output shape: (B, T_latent, d_latent)
-
-        # Apply output projection and dropout
-        attn_output_proj = self.c_proj(attn_output)
-        attn_output_drop = self.resid_dropout(attn_output_proj) # (B, T_latent, d_latent)
-
-        # Block handles residual addition: returns pre-attention input and attention output
-        return attn_output_drop # Return only the processed output
-
-
-# --- LMA Initial Transformation Layer (Revised for Padding) ---
-class LMA_InitialTransform(nn.Module):
-    """ Performs Stage 1 and Stage 2 of LMA to map (B,T,d0) -> (B,L_new,d_new) """
-    def __init__(self, config, lma_config: LMAConfig):
-        super().__init__()
-        self.config = config # Main GPTConfig
-        self.lma_config = lma_config # LMAConfig for *this specific transform*
-
-        # Validate dimensions based on the provided lma_config
-        if lma_config.d0 <= 0 or lma_config.n_head_stacking <= 0:
-             raise ValueError("LMA Initial Transform: d0 and n_head_stacking must be positive.")
-        if lma_config.d0 % lma_config.n_head_stacking != 0:
-             raise ValueError(f"LMA Initial Transform: d0 ({lma_config.d0}) must be divisible by n_head_stacking ({lma_config.n_head_stacking}).")
-
-        # Configured dimensions for this transformation
-        self.d0 = lma_config.d0 # Input feature dimension (e.g., n_embd)
-        self.L = lma_config.L   # Expected *maximum* input sequence length (e.g., block_size)
-        self.n_head_stacking = lma_config.n_head_stacking # Heads for Stage 2a
-        self.d_k = self.d0 // self.n_head_stacking # Dimension per head view
-
-        # Output dimensions of this transformation
-        self.d_new = lma_config.d_new # Target latent dimension
-        self.L_new = lma_config.L_new # Target latent sequence length
-        self.C_new = lma_config.C_new # Intermediate chunk dimension
-
-        self.bias = config.bias
-
-        print(f" Init LMA InitialTransform: In(Max L={self.L}, d0={self.d0}, nH_stack={self.n_head_stacking}) -> Out(L_new={self.L_new}, d_new={self.d_new})")
-        print(f"   Intermediate calculated: d_k={self.d_k}, C_new={self.C_new}")
-
-        # Layer for Stage 2b Embedding (mapping C_new -> d_new)
-        self.embed_layer_2 = nn.Linear(self.C_new, self.d_new, bias=self.bias)
-        #self.embed_layer_2_act = nn.ReLU() # Or nn.GELU()? Using ReLU as specified originally
-        self.embed_layer_2_act = nn.GELU()
-
-    def forward(self, y): # Input y is (B, T, d0) from initial embedding/prev block
-        B, T, C = y.size()
-        if C != self.d0:
-            raise ValueError(f"LMA InitialTransform input C({C}) != configured d0({self.d0})")
-
-        # --- Handle sequences shorter or longer than self.L ---
-        padded_y = y
-        current_T_for_processing = T
-
-        if T < self.L:
-            padding_size = self.L - T
-            # Pad sequence length (dim 1). Use 0 for padding value.
-            padded_y = F.pad(y, (0, 0, 0, padding_size)) # Pads (last dim C), (second-to-last dim T)
-            # print(f"LMA InitialTransform: Padded input T={T} to L={self.L}")
-            current_T_for_processing = self.L # Use the padded length for subsequent processing
-        elif T > self.L:
-             # This case should ideally be handled by truncation *before* calling the model
-             # Truncate from the end to keep the most recent tokens if T > L
-             print(f"Warning: LMA InitialTransform received T={T} > L={self.L}. Truncating input to last {self.L} tokens.")
-             padded_y = y[:, -self.L:, :]
-             current_T_for_processing = self.L
-        # If T == self.L, padded_y is just y, and current_T_for_processing is L
-
-        # Ensure the input for head splitting has length current_T_for_processing (which is self.L after padding/truncation)
-        assert padded_y.size(1) == self.L, f"Shape after padding/truncation mismatch: Got {padded_y.shape}, expected T={self.L}"
-
-        # --- Stage 2a: Head-View Stacking ---
-        # Use padded_y which now has shape (B, self.L, d0)
-        try:
-            head_views = torch.split(padded_y, self.d_k, dim=2)
-        except RuntimeError as e:
-             raise RuntimeError(f"Error splitting heads in LMA InitialTransform: d0={self.d0}, d_k={self.d_k}. Is d0 divisible by n_head_stacking? Input shape={padded_y.shape}") from e
-        x_stacked = torch.cat(head_views, dim=1) # Shape: (B, self.L * self.n_head_stacking, d_k)
-
-        # --- Stage 2b: Re-Chunking & Latent Embedding ---
-        # The total number of features should be self.L * self.d0
-        total_features_expected = self.L * self.d0
-        # Check total elements after stacking (B * L*nH * dk = B * L * d0)
-        if x_stacked.numel() != B * total_features_expected:
-             raise RuntimeError(f"Internal dimension mismatch in LMA InitialTransform after stacking. "
-                                f"Expected {B*total_features_expected} elements, got {x_stacked.numel()}. "
-                                f"Check L={self.L}, d0={self.d0}, nH={self.n_head_stacking}, d_k={self.d_k}, "
-                                f"Input T={T}, padded_y={padded_y.shape}, x_stacked={x_stacked.shape}")
-
-        # Flatten features: (B, self.L * d0)
-        x_flat = x_stacked.view(B, -1)
-
-        # Check if total features match expected L_new * C_new based on config
-        expected_latent_features = self.L_new * self.C_new
-        if x_flat.shape[1] != expected_latent_features:
-            # This indicates an issue in the LMAConfig calculation or its application
-            raise RuntimeError(f"LMA Config mismatch during transform: Input L*d0 ({total_features_expected}) != Calculated L_new*C_new ({expected_latent_features}). "
-                               f"Check LMAConfig values: L={self.L}, d0={self.d0}, L_new={self.L_new}, C_new={self.C_new}")
-
-        # Reshape into latent steps: (B, L_new, C_new)
-        x_rechunked = x_flat.view(B, self.L_new, self.C_new)
-
-        # Apply embedding layer (maps C_new -> d_new)
-        # Reshape for Linear layer: (B * L_new, C_new)
-        z_embedded_flat = self.embed_layer_2(x_rechunked.view(-1, self.C_new))
-        # Apply activation
-        z_activated = self.embed_layer_2_act(z_embedded_flat)
-        # Reshape back to latent space dimensions: (B, L_new, d_new)
-        z = z_activated.view(B, self.L_new, self.d_new)
-
-        return z # Output is the first latent representation, always (B, L_new, d_new)
-
-# --- GPT Class Definition (Unchanged) ---
+# --- GPTConfig ---
 @dataclass
 class GPTConfig:
     block_size: int = 1024
-    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    vocab_size: int = 50304
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-    # LMA Specific Config
-    use_lma: bool = False           # Whether to use LMA architecture
-    lma_reduction_factor: int = 2   # Target reduction factor for L and d in initial transform
-    
+    bias: bool = True
+    use_lma: bool = False
+    lma_reduction_factor: int = 2
+
+# --- LMA Initial Transformation Layer (Modified for Position Tag Propagation) ---
+class LMA_InitialTransform(nn.Module):
+    """
+    Performs Stage 1 and Stage 2 of LMA to map (B,T,d0) -> (z, pos_tags)
+    where z is (B, L_new, d_new) and pos_tags is (B, L_new, 2) [min_t, max_t]
+    """
+    def __init__(self, config, lma_config: LMAConfig):
+        super().__init__()
+        self.config = config
+        self.lma_config = lma_config
+
+        if lma_config.d0 <= 0 or lma_config.n_head_stacking <= 0: raise ValueError("LMA Initial Transform: d0/n_head_stacking must be positive.")
+        if lma_config.d0 % lma_config.n_head_stacking != 0: raise ValueError(f"LMA Initial Transform: d0 ({lma_config.d0}) not divisible by n_head_stacking ({lma_config.n_head_stacking}).")
+
+        self.d0 = lma_config.d0
+        self.L = lma_config.L # Max original sequence length
+        self.n_head_stacking = lma_config.n_head_stacking
+        self.d_k = self.d0 // self.n_head_stacking
+        self.d_new = lma_config.d_new
+        self.L_new = lma_config.L_new
+        self.C_new = lma_config.C_new
+        self.bias = config.bias
+
+        print(f" Init LMA InitialTransform: In(Max L={self.L}, d0={self.d0}, nH_stack={self.n_head_stacking}) -> Out(L_new={self.L_new}, d_new={self.d_new}) + PosTags")
+        print(f"   Intermediate calculated: d_k={self.d_k}, C_new={self.C_new}")
+
+        self.embed_layer_2 = nn.Linear(self.C_new, self.d_new, bias=self.bias)
+        self.embed_layer_2_act = nn.GELU()
+
+    def forward(self, y): # Input y is (B, T, d0)
+        B, T, C = y.size()
+        if C != self.d0: raise ValueError(f"LMA InitialTransform input C({C}) != configured d0({self.d0})")
+        device = y.device
+
+        # --- Handle Sequence Length for Data ---
+        padded_y = y
+        if T < self.L: padded_y = F.pad(y, (0, 0, 0, self.L - T))
+        elif T > self.L: print(f"Warning: LMA InitialTransform received T={T} > L={self.L}. Truncating."); padded_y = y[:, -self.L:, :]
+        # padded_y now has shape (B, L, d0)
+
+        # --- Process Data (Stage 2a & 2b) ---
+        try: head_views = torch.split(padded_y, self.d_k, dim=2)
+        except RuntimeError as e: raise RuntimeError(f"Error splitting heads: d0={self.d0}, d_k={self.d_k}. Input shape={padded_y.shape}") from e
+        x_stacked = torch.cat(head_views, dim=1) # Shape: (B, L * nH, d_k)
+        x_flat = x_stacked.view(B, -1) # Shape: (B, L * d0)
+        if x_flat.shape[1] != self.L_new * self.C_new: raise RuntimeError(f"Config mismatch: L*d0 != L_new*C_new.")
+        x_rechunked = x_flat.view(B, self.L_new, self.C_new)
+        z_embedded_flat = self.embed_layer_2(x_rechunked.view(-1, self.C_new))
+        z_activated = self.embed_layer_2_act(z_embedded_flat)
+        z = z_activated.view(B, self.L_new, self.d_new) # Shape: (B, L_new, d_new)
+
+        # --- Process Position Indices ---
+        # 1. Create original position indices (0 to T-1)
+        pos_indices = torch.arange(T, device=device, dtype=torch.long).view(1, T, 1).expand(B, T, 1)
+
+        # 2. Handle sequence length for positions (pad with -1, truncate)
+        # Padding with -1 allows min/max to work correctly later (min ignores -1, max ignores -1 unless all are -1)
+        padded_pos = pos_indices
+        if T < self.L: padded_pos = F.pad(pos_indices, (0, 0, 0, self.L - T), value=-1) # Pad last dim (1), then second-to-last (T)
+        elif T > self.L: padded_pos = pos_indices[:, -self.L:, :]
+        # padded_pos now has shape (B, L, 1)
+
+        # 3. Stack positions analogously to head stacking
+        pos_stacked = padded_pos.repeat(1, self.n_head_stacking, 1) # Shape: (B, L * nH, 1)
+
+        # 4. Flatten positions
+        pos_flat = pos_stacked.view(B, -1) # Shape: (B, L * nH)
+
+        # 5. Re-chunk positions: Reshape pos_flat (L*nH) -> (L_new, C_pos)
+        L_nH = self.L * self.n_head_stacking
+        C_pos = -1 # Initialize C_pos
+        target_len_pos = -1 # Initialize target_len_pos
+
+        if L_nH == 0 or self.L_new == 0 : # Avoid division by zero
+            print(f"Warning: L_nH ({L_nH}) or L_new ({self.L_new}) is zero. Cannot calculate C_pos. Position tags might be invalid.")
+            # Create dummy pos_tags?
+            pos_rechunked = torch.full((B, self.L_new, 1), -1, dtype=torch.long, device=device) # Minimal chunk size 1
+            C_pos = 1
+
+        elif L_nH % self.L_new == 0:
+            C_pos = L_nH // self.L_new
+            target_len_pos = L_nH # No padding needed
+            pos_rechunked = pos_flat.view(B, self.L_new, C_pos)
+        else:
+            # Need padding for positions
+            print(f"Warning: L*nH ({L_nH}) not divisible by L_new ({self.L_new}). Padding positions.")
+            C_pos_float = L_nH / self.L_new
+            C_pos = math.ceil(C_pos_float) # Num positions per latent step needed
+            target_len_pos = self.L_new * C_pos # Total elements after padding
+            padding_size_pos = target_len_pos - L_nH
+            pos_flat_padded = F.pad(pos_flat, (0, padding_size_pos), value=-1) # Pad flattened positions
+            pos_rechunked = pos_flat_padded.view(B, self.L_new, C_pos)
+            if pos_rechunked.shape[1] * pos_rechunked.shape[2] != target_len_pos:
+                 raise RuntimeError("Position rechunking shape mismatch after padding.")
+
+        # 6. Aggregate Min/Max original time index per latent position
+        # We use pos_rechunked (B, L_new, C_pos) which contains indices from 0 to T-1 and padding -1
+        # Need to handle the padding value -1 carefully.
+        # Replace -1 with a large value for min, and a small value for max temporarily?
+        min_val_replace = T # Value larger than any valid index
+        max_val_replace = -1 # Value smaller than any valid index
+
+        pos_for_min = torch.where(pos_rechunked == -1, min_val_replace, pos_rechunked)
+        pos_for_max = torch.where(pos_rechunked == -1, max_val_replace, pos_rechunked)
+
+        min_t_per_latent = torch.min(pos_for_min, dim=2)[0] # Shape: (B, L_new)
+        max_t_per_latent = torch.max(pos_for_max, dim=2)[0] # Shape: (B, L_new)
+
+        # If a latent position only contained padding, min will be T and max will be -1. Reset these.
+        min_t_per_latent = torch.where(min_t_per_latent == min_val_replace, -1, min_t_per_latent)
+        max_t_per_latent = torch.where(max_t_per_latent == max_val_replace, -1, max_t_per_latent)
+
+        # Stack min and max tags
+        pos_tags = torch.stack([min_t_per_latent, max_t_per_latent], dim=2) # Shape: (B, L_new, 2)
+
+        # Return latent representation and position tags
+        return z, pos_tags
+
+
+# --- Latent Attention (Rewritten for Manual MHA & Dynamic Masking) ---
+class LatentMetaAttention(nn.Module):
+    """
+    LMA Core Logic - Rewritten for Manual Multi-Head Attention
+    Accepts latent input z and position tags, uses dynamic causal masking.
+    """
+    def __init__(self, config, lma_latent_config: LMAConfig):
+        super().__init__()
+        self.config = config
+        self.lma_config = lma_latent_config
+
+        self.d_latent = lma_latent_config.d_new
+        self.L_latent = lma_latent_config.L_new # Max latent length
+        self.n_head_latent = lma_latent_config.n_head_latent
+        self.bias = config.bias
+        self.dropout_rate = config.dropout # Use config.dropout
+
+        if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
+             raise ValueError(f"Invalid latent attention params: d={self.d_latent}, nH={self.n_head_latent}")
+        self.head_dim = self.d_latent // self.n_head_latent
+
+        print(f"  Initializing LatentMetaAttention (Manual MHA, Dynamic Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+
+        # Projections (can combine into one like CausalSelfAttention if preferred)
+        self.q_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.k_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.v_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        # Output projection
+        self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        # Dropouts
+        self.attn_dropout = nn.Dropout(self.dropout_rate)
+        self.resid_dropout = nn.Dropout(self.dropout_rate)
+
+        # No static mask buffer needed anymore
+        self.register_buffer("causal_mask_latent", None, persistent=False)
+
+
+    def forward(self, z, pos_tags): # Input z:(B, T_latent, d_latent), pos_tags:(B, T_latent, 2)
+        B, T_latent, C_latent = z.size()
+
+        # Validate inputs
+        if C_latent != self.d_latent: raise ValueError(f"LatentAttention input C ({C_latent}) != d_latent ({self.d_latent})")
+        if pos_tags is None: raise ValueError("pos_tags cannot be None for LatentMetaAttention dynamic masking.")
+        if pos_tags.shape[0] != B or pos_tags.shape[1] != T_latent or pos_tags.shape[2] != 2:
+            raise ValueError(f"pos_tags shape mismatch. Expected ({B}, {T_latent}, 2), got {pos_tags.shape}")
+        if T_latent > self.L_latent: # Should be handled by transform, but double check
+             print(f"Warning: LatentAttention input T_latent ({T_latent}) > max L_latent ({self.L_latent}). Truncating.")
+             z = z[:, :self.L_latent, :]
+             pos_tags = pos_tags[:, :self.L_latent, :]
+             T_latent = self.L_latent
+
+        # --- Dynamic Mask Calculation ---
+        min_t = pos_tags[:, :, 0] # (B, T_latent)
+        max_t = pos_tags[:, :, 1] # (B, T_latent)
+        query_max_t = max_t.unsqueeze(2) # (B, T_latent, 1)
+        key_min_t   = min_t.unsqueeze(1) # (B, 1, T_latent)
+
+        # Mask if the key's earliest time is later than the query's latest time
+        # Result is True where attention should be MASKED (prevented)
+        dynamic_mask = key_min_t > query_max_t # Shape: (B, T_latent, T_latent)
+        # Additionally, mask attention if query or key position was padding (tag == -1)
+        query_pad_mask = (query_max_t == -1) # (B, T_latent, 1) -> True if query position is padding
+        key_pad_mask = (key_min_t == -1)   # (B, 1, T_latent) -> True if key position is padding
+        # Combine: Mask if causality violated OR if query is padding OR if key is padding
+        dynamic_mask = dynamic_mask | query_pad_mask | key_pad_mask
+
+        # --- Manual Multi-Head Attention ---
+        # 1. Project Q, K, V
+        q = self.q_proj(z) # (B, T_latent, d_latent)
+        k = self.k_proj(z) # (B, T_latent, d_latent)
+        v = self.v_proj(z) # (B, T_latent, d_latent)
+
+        # 2. Reshape for Multi-Head
+        q = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_latent, hs)
+        k = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_latent, hs)
+        v = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_latent, hs)
+
+        # 3. Calculate Scaled Dot-Product Attention Scores
+        # (B, nH, T_latent, hs) @ (B, nH, hs, T_latent) -> (B, nH, T_latent, T_latent)
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
+
+        # 4. Apply Dynamic Mask
+        # Expand mask from (B, T_latent, T_latent) to (B, 1, T_latent, T_latent) for broadcasting
+        attn_scores = attn_scores.masked_fill(dynamic_mask.unsqueeze(1), float('-inf'))
+
+        # 5. Softmax
+        attn_probs = F.softmax(attn_scores, dim=-1)
+        attn_probs = self.attn_dropout(attn_probs) # Apply dropout
+
+        # 6. Apply Attention to V
+        # (B, nH, T_latent, T_latent) @ (B, nH, T_latent, hs) -> (B, nH, T_latent, hs)
+        y = torch.matmul(attn_probs, v)
+
+        # 7. Reshape and Combine Heads
+        y = y.transpose(1, 2).contiguous().view(B, T_latent, self.d_latent)
+
+        # 8. Output Projection
+        y = self.resid_dropout(self.c_proj(y))
+
+        return y # Return final attention output
+
+
 # --- Learnable Decoder for LMA ---
 class LMA_Decoder(nn.Module):
     """ Learns to map latent sequence (B, L_new, d_new) back to (B, T, d_output) """
     def __init__(self, config: GPTConfig, lma_config: LMAConfig):
         super().__init__()
-        self.config = config # Main GPTConfig
-        self.lma_config = lma_config # Config providing L_new, d_new
-
-        self.L_new = lma_config.L_new
-        self.d_new = lma_config.d_new
-        # Define the output dimension of the decoder. Let's keep it same as d_new for simplicity.
-        # Could also map back to config.n_embd if desired.
-        self.d_output = self.d_new
-        self.bias = config.bias
-        self.dropout = config.dropout
-
+        self.config = config; self.lma_config = lma_config
+        self.L_new = lma_config.L_new; self.d_new = lma_config.d_new
+        self.d_output = self.d_new # Keep output dim same as latent dim
+        self.bias = config.bias; self.dropout = config.dropout
         print(f" Init LMA Decoder: In(L_new={self.L_new}, d_new={self.d_new}) -> Out(T, d_output={self.d_output})")
-
-        # Using simple refinement layers after interpolation
-        # LayerNorm -> Linear -> Activation -> Linear -> Dropout
-        # These operate on the feature dimension (d_new)
         self.ln = LayerNorm(self.d_new, bias=self.bias)
-        # Make hidden dim proportional to d_new, similar to MLP structure
-        hidden_dim = self.d_new * 2 # Can be tuned
+        hidden_dim = self.d_new * 2
         self.fc1 = nn.Linear(self.d_new, hidden_dim, bias=self.bias)
-        self.act = nn.GELU() # Common activation in transformers
+        self.act = nn.GELU()
         self.fc2 = nn.Linear(hidden_dim, self.d_output, bias=self.bias)
         self.drop = nn.Dropout(self.dropout)
 
-    def forward(self, z, target_T): # z shape: (B, L_new, d_new), target_T is original sequence length
+    def forward(self, z, target_T): # z shape: (B, L_new, d_new)
         B, current_L_new, current_d_new = z.shape
+        if current_L_new != self.L_new: print(f"Warning: LMA_Decoder received L_new={current_L_new}, expected {self.L_new}.")
+        if current_d_new != self.d_new: raise ValueError(f"LMA_Decoder input d ({current_d_new}) != d_new ({self.d_new})")
 
-        if current_L_new != self.L_new:
-             # This might happen if input T to model was < block_size, affecting L_new calculation somehow?
-             # Or if L_new wasn't calculated correctly. For now, warn and proceed.
-             print(f"Warning: LMA_Decoder received L_new={current_L_new}, expected {self.L_new}. Proceeding.")
-             # Let interpolation handle the actual input length current_L_new
-        if current_d_new != self.d_new:
-            raise ValueError(f"LMA_Decoder input d ({current_d_new}) != configured d_new ({self.d_new})")
-
-        # 1. Interpolate length
-        # Permute to (B, C, L) for interpolation function
         z_permuted = z.permute(0, 2, 1) # -> (B, d_new, current_L_new)
-        z_interpolated = F.interpolate(
-            z_permuted,
-            size=target_T,      # Target original sequence length T
-            mode='linear',      # Linear interpolation
-            align_corners=False # Recommended for non-image data / linear mode
-        ) # -> (B, d_new, target_T)
-
-        # Permute back to (B, L, C)
+        z_interpolated = F.interpolate(z_permuted, size=target_T, mode='linear', align_corners=False)
         z_upsampled = z_interpolated.permute(0, 2, 1) # -> (B, target_T, d_new)
 
-        # 2. Refine features with learnable layers
         z_norm = self.ln(z_upsampled)
         z_hidden = self.act(self.fc1(z_norm))
         z_refined = self.fc2(z_hidden)
         z_output = self.drop(z_refined) # -> (B, target_T, d_output)
 
-        # Optional: Add residual connection?
-        # If d_output == d_new, we could potentially add z_upsampled here.
-        # Let's keep it simple first.
-        # if self.d_output == self.d_new:
-        #    z_output = z_upsampled + z_output
+        # Add residual connection from *before* refinement MLP
+        if self.d_output == self.d_new:
+            z_output = z_upsampled + z_output
 
-        return z_output # Shape: (B, target_T, d_output)
+        return z_output
 
 
 # --- Standard Causal Self Attention ---
@@ -563,785 +370,478 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        # output projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
-        self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.dropout = config.dropout
-        # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
+        self.n_head = config.n_head; self.n_embd = config.n_embd; self.dropout = config.dropout
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention') and self.dropout == 0.0
         if not self.flash:
-            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
-            # causal mask to ensure that attention is only applied to the left in the input sequence
-            # Note: This fixed mask assumes block_size length. Dynamic slicing needed in forward.
+            print("WARNING: using slow attention.")
             mask = torch.tril(torch.ones(config.block_size, config.block_size))
             self.register_buffer("bias", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
-        else:
-             print("Using Flash Attention.")
-             self.register_buffer("bias", None, persistent=False) # No bias needed for flash
-
+        else: print("Using Flash Attention."); self.register_buffer("bias", None, persistent=False)
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-        if C != self.n_embd:
-             raise ValueError(f"CausalSelfAttention input C({C}) != config n_embd({self.n_embd})")
-
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        B, T, C = x.size()
+        if C != self.n_embd: raise ValueError(f"CausalSelfAttention C({C}) != n_embd({self.n_embd})")
         q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-
-        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         if self.flash:
-            # efficient attention using Flash Attention CUDA kernels
-            # is_causal=True handles masking internally
             y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
         else:
-            # manual implementation of attention
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            # Apply causal mask dynamically based on current sequence length T
             if self.bias is None: raise RuntimeError("Slow attention requires bias buffer")
-            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_dropout(att)
-            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-
-        # Re-assemble all head outputs side by side
+            slice_T = min(T, self.bias.size(-1))
+            att = att.masked_fill(self.bias[:,:,:slice_T,:slice_T] == 0, float('-inf'))
+            att = F.softmax(att, dim=-1); att = self.attn_dropout(att); y = att @ v
         y = y.transpose(1, 2).contiguous().view(B, T, C)
-
-        # output projection
-        y = self.resid_dropout(self.c_proj(y))
-        return y
+        y = self.resid_dropout(self.c_proj(y)); return y
 
 
-# --- MLP (Operates on Block's Input/Output Dim) ---
+# --- MLP ---
 class MLP(nn.Module):
-    def __init__(self, config, block_internal_dim): # Takes dimension of data within the block
+    def __init__(self, config, block_internal_dim):
         super().__init__()
         self.input_dim = block_internal_dim
-        # Hidden dim often 4x n_embd, but here let's make it 4x block_internal_dim
         hidden_dim = 4 * self.input_dim
         self.c_fc = nn.Linear(self.input_dim, hidden_dim, bias=config.bias)
         self.gelu = nn.GELU()
-        # Project back to the block's internal dimension
         self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
-        if x.size(-1) != self.input_dim:
-             raise ValueError(f"MLP input dim {x.size(-1)} != expected {self.input_dim}")
-        x = self.c_fc(x)
-        x = self.gelu(x)
-        x = self.c_proj(x)
-        x = self.dropout(x)
-        return x
+        if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim {x.size(-1)} != expected {self.input_dim}")
+        x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
 
-# --- Block (Revised to handle LMA or MHA consistently) ---
+
+# --- Block (Modified to handle pos_tags) ---
 class Block(nn.Module):
     """ Transformer Block: Can use either CausalSelfAttention or LatentMetaAttention """
     def __init__(self, config: GPTConfig, is_lma: bool, lma_config: LMAConfig = None):
         super().__init__()
         self.use_lma = is_lma
-
-        # Determine block's operating dimension based on LMA config or main config
         if self.use_lma:
-            if lma_config is None:
-                raise ValueError("lma_config must be provided if is_lma is True for a Block")
-            # LMA blocks operate *within* the latent space defined by lma_config
-            self.operating_dim = lma_config.d_new # Should be d_latent
-            self.operating_L = lma_config.L_new # Should be L_latent
+            if lma_config is None: raise ValueError("lma_config must be provided for LMA Block")
+            self.operating_dim = lma_config.d_new
+            self.operating_L = lma_config.L_new # Max latent L
             print(f"Initializing Block {id(self)} (LMA): Operates on dim={self.operating_dim}, max_L={self.operating_L}")
             self.attn = LatentMetaAttention(config, lma_config)
         else: # Standard MHA
-            # MHA blocks operate on the main embedding dimension
             self.operating_dim = config.n_embd
             self.operating_L = config.block_size # Max sequence length
             print(f"Initializing Block {id(self)} (MHA): Operates on dim={self.operating_dim}, max_L={self.operating_L}")
             self.attn = CausalSelfAttention(config)
-
-        # LayerNorms and MLP operate on the dimension internal to this block
         self.ln_1 = LayerNorm(self.operating_dim, bias=config.bias)
-        self.mlp = MLP(config, self.operating_dim) # MLP sized according to operating dim
+        self.mlp = MLP(config, self.operating_dim)
         self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
 
-
-    def forward(self, x): # Input x: (B, T_current, self.operating_dim)
+    def forward(self, x, pos_tags=None): # Accept optional pos_tags
+        # Input x: (B, T_current, self.operating_dim)
+        # Input pos_tags: (B, T_current, 2) if LMA, else None
         B, T_current, C_current = x.shape
-
-        # Check input dimension matches the block's operating dimension
         if C_current != self.operating_dim:
              block_type = "LMA" if self.use_lma else "MHA"
-             raise ValueError(f"Block ({block_type}) input C ({C_current}) != block operating_dim ({self.operating_dim})")
-        # Sequence length check (optional, can be handled by attention mask slicing)
-        # if T_current > self.operating_L:
-        #      print(f"Warning: Block input T ({T_current}) > max configured L ({self.operating_L}). Ensure attention mask handles this.")
+             raise ValueError(f"Block ({block_type}) C ({C_current}) != operating_dim ({self.operating_dim})")
 
         # Attention + Residual Path
-        # Apply ln_1 -> attn -> residual
         x_norm1 = self.ln_1(x)
-        attn_output = self.attn(x_norm1) # Attn modules handle their respective inputs/masking
+        if self.use_lma:
+            if pos_tags is None: raise ValueError("LMA Block requires pos_tags.")
+            # Pass pos_tags to LatentMetaAttention
+            attn_output = self.attn(x_norm1, pos_tags)
+        else:
+            # Standard attention doesn't need pos_tags
+            attn_output = self.attn(x_norm1)
         x = x + attn_output # Residual connection 1
 
         # MLP + Residual Path
-        # Apply ln_2 -> mlp -> residual
         x_norm2 = self.ln_2(x)
         mlp_output = self.mlp(x_norm2)
         x = x + mlp_output # Residual connection 2
 
-        # Output shape: (B, T_current, self.operating_dim)
-        # If LMA, T_current is T_latent. If MHA, T_current is T.
-        return x
+        # Return data and pass pos_tags through if they were received
+        return x, pos_tags
+# --- End Block Modification ---
 
-
-# --- Main GPT Model (Revised with Initial Transform and Decoder) ---
+# --- Main GPT Model (Modified for pos_tags flow) ---
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
-        assert config.vocab_size is not None
-        assert config.block_size is not None
+        assert config.vocab_size is not None; assert config.block_size is not None
         self.config = config
 
-        # --- Validate LMA Config dependencies ---
         if config.use_lma:
-             if config.n_embd % config.n_head != 0:
-                  raise ValueError(f"LMA requires n_embd ({config.n_embd}) to be divisible by n_head ({config.n_head}) for initial head stacking.")
-             if config.lma_reduction_factor <= 0:
-                  raise ValueError(f"LMA requires lma_reduction_factor ({config.lma_reduction_factor}) to be > 0.")
+             if config.n_embd % config.n_head != 0: raise ValueError(f"LMA n_embd ({config.n_embd}) not divisible by n_head ({config.n_head}).")
+             if config.lma_reduction_factor <= 0: raise ValueError(f"LMA reduction_factor ({config.lma_reduction_factor}) > 0.")
 
-        # --- Embedding Layers ---
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
         ))
 
-        # --- Determine dimensions and architecture flow ---
-        self.initial_lma_transform = None
-        self.lma_decoder = None
-        self.initial_lma_cfg = None # Store the config used for the transform
+        self.initial_lma_transform = None; self.lma_decoder = None; self.initial_lma_cfg = None
+        current_d = config.n_embd; current_L = config.block_size; self.operates_in_latent = False
 
-        current_d = config.n_embd     # Dimension flowing into blocks
-        current_L = config.block_size # Max sequence length flowing into blocks
-        self.operates_in_latent = False # Flag if blocks run in latent space
-
-        # --- Optional: Initial LMA Transformation ---
         if config.use_lma:
             print("--- Configuring LMA: Initial Transformation ---")
-            self.operates_in_latent = True # Blocks will run in latent space
+            self.operates_in_latent = True
+            # ... (LMA Config calculation as before) ...
             reduction_factor = max(1, config.lma_reduction_factor)
             target_l_new_init = config.block_size // reduction_factor
             target_d_new_init = config.n_embd // reduction_factor
-            target_l_new_init = max(1, target_l_new_init)
-            target_d_new_init = max(1, target_d_new_init)
-            latent_n_head = config.n_head # Use same n_head for latent attention
-
-            # Adjust d_new to be divisible by latent_n_head
+            target_l_new_init = max(1, target_l_new_init); target_d_new_init = max(1, target_d_new_init)
+            latent_n_head = config.n_head
             if target_d_new_init == 0: raise ValueError("Initial LMA target_d_new calculated as zero.")
             if target_d_new_init % latent_n_head != 0:
                 original_target_d = target_d_new_init
                 target_d_new_init = max(latent_n_head, (target_d_new_init // latent_n_head) * latent_n_head)
                 if target_d_new_init == 0: target_d_new_init = latent_n_head
-                print(f"LMA Init: Adjusted target d_new from {original_target_d} to {target_d_new_init} to be divisible by latent n_head {latent_n_head}")
-
+                print(f"LMA Init: Adjusted target d_new from {original_target_d} to {target_d_new_init}")
             try:
                 self.initial_lma_cfg = LMAConfig(
                     d0=config.n_embd, L=config.block_size, n_head_stacking=config.n_head,
                     target_L_new=target_l_new_init, d_new=target_d_new_init, n_head_latent=latent_n_head
                 )
                 self.initial_lma_transform = LMA_InitialTransform(config, self.initial_lma_cfg)
-                # Update dimensions for blocks
-                current_L = self.initial_lma_cfg.L_new # Blocks operate on latent length L_new
-                current_d = self.initial_lma_cfg.d_new # Blocks operate on latent dimension d_new
+                current_L = self.initial_lma_cfg.L_new; current_d = self.initial_lma_cfg.d_new
                 print(f"--- Dimensions into Blocks: Latent L={current_L}, Latent D={current_d} ---")
-            except ValueError as e:
-                 print(f"ERROR configuring Initial LMA Transform: {e}")
-                 raise e
+            except ValueError as e: print(f"ERROR configuring Initial LMA Transform: {e}"); raise e
 
-        # --- Build Transformer Blocks ---
         print(f"--- Building {config.n_layer} Transformer Blocks ---")
         blocks = []
         for i in range(config.n_layer):
-            block_lma_config = None
             is_lma_block = self.operates_in_latent
-
+            block_lma_config = None # Define outside if block
             if is_lma_block:
-                # If LMA is used, blocks operate in the latent space defined by initial_lma_cfg.
-                # The LMAConfig passed to the block's LatentMetaAttention needs to reflect this.
-                if self.initial_lma_cfg is None: # Should not happen if operates_in_latent is True
-                    raise RuntimeError("Internal setup error: operates_in_latent=True but initial_lma_cfg is None.")
-
-                # Config for the attention *inside* the block
+                if self.initial_lma_cfg is None: raise RuntimeError("LMA config error.")
+                # Create LMAConfig for attention inside block
                 block_lma_config = LMAConfig(
-                     d0=current_d,               # Attention input is current latent d
-                     L=current_L,                # Attention input is current latent L
-                     # Mask calculation needs original context before *initial transform*
-                     n_head_stacking=config.n_head, # Orig heads used for stacking
-                     # Latent attention parameters (no further reduction within blocks)
-                     target_L_new=current_L,     # Stays L_new
-                     d_new=current_d,            # Stays d_new
-                     n_head_latent=self.initial_lma_cfg.n_head_latent # Use latent heads from initial config
+                     d0=current_d, L=current_L, # Operate on latent dims
+                     n_head_stacking=config.n_head, # Original context
+                     target_L_new=current_L, d_new=current_d, # No further reduction
+                     n_head_latent=self.initial_lma_cfg.n_head_latent
                  )
-                 # We need to pass the original L (block_size) to LatentMetaAttention for the mask.
-                 # Modify L in block_lma_config *only for mask calculation purpose*.
-                 # This is slightly hacky - maybe LMAConfig needs explicit orig_L field?
-                 # Let's patch it here for now:
-                #block_lma_config.L = config.block_size # Patch L for mask calculation inside LatentMetaAttention
-
-                # Instantiate block, telling it it's LMA and passing the config
+                # No need to patch L anymore
                 block = Block(config, is_lma=True, lma_config=block_lma_config)
-
-            else: # Standard MHA block
-                block = Block(config, is_lma=False)
-
+            else: block = Block(config, is_lma=False)
             blocks.append(block)
-            # Note: Output dimensions of block match input dimension (current_d, current_L)
-
         self.transformer['h'] = nn.ModuleList(blocks)
 
-        # --- Optional: LMA Decoder ---
-        self.final_ln_lm_head_dim = current_d # Store the dimension entering final LN/LMHead
+        self.final_ln_lm_head_dim = current_d
         if self.operates_in_latent:
-            if self.initial_lma_cfg is None: # Sanity check
-                 raise RuntimeError("Internal setup error: operates_in_latent=True but initial_lma_cfg is None.")
+            if self.initial_lma_cfg is None: raise RuntimeError("LMA config error.")
             print("--- Configuring LMA: Decoder ---")
             self.lma_decoder = LMA_Decoder(config, self.initial_lma_cfg)
-            # The decoder outputs d_output, which we set to d_new (current_d)
             self.final_ln_lm_head_dim = self.lma_decoder.d_output
-            print(f"--- Dimension after Decoder (into Final LN/LMHead): {self.final_ln_lm_head_dim} ---")
+            print(f"--- Dimension after Decoder: {self.final_ln_lm_head_dim} ---")
 
-        # --- Final Layers ---
-        # These operate on the output dimension of the last block (if MHA)
-        # or the output dimension of the decoder (if LMA)
         self.transformer['ln_f'] = LayerNorm(self.final_ln_lm_head_dim, bias=config.bias)
         self.lm_head = nn.Linear(self.final_ln_lm_head_dim, config.vocab_size, bias=False)
         print(f"--- Final LN & LM Head operating on dimension: {self.final_ln_lm_head_dim} ---")
 
-        # Weight Tying check
-        # Only tie if not using LMA AND the final dimension matches the embedding dimension
+        # Weight Tying Check (same logic)
+        print(f"DEBUG: Checking weight tying. Final Dim = {self.final_ln_lm_head_dim}, n_embd = {self.config.n_embd}, use_lma = {config.use_lma}")
         if not config.use_lma and self.final_ln_lm_head_dim == config.n_embd:
             self.transformer.wte.weight = self.lm_head.weight
             print("Weight tying enabled.")
         else:
              if config.use_lma: reason = "LMA is used"
              elif self.final_ln_lm_head_dim != config.n_embd: reason = f"final dim {self.final_ln_lm_head_dim} != n_embd {config.n_embd}"
-             else: reason = "Unknown"
+             else: reason = "Unknown condition"
              print(f"Weight tying disabled ({reason}).")
+        print(f"DEBUG: Are lm_head and wte weights the same object? {self.lm_head.weight is self.transformer.wte.weight}")
 
-        # Init weights
         self.apply(self._init_weights)
-        # Apply special scaled init to projection weights in residual connections
         for pn, p in self.named_parameters():
-            if pn.endswith('c_proj.weight'): # Applies to MHA proj, MLP proj
-                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
-            # Consider scaling for LMA projections too?
-            # if 'lma_decoder' in pn and pn.endswith('weight'): # Example
-            #      torch.nn.init.normal_(p, mean=0.0, std=0.02) # Standard init for decoder for now
-
-        # Report number of parameters
+            if pn.endswith('c_proj.weight'): torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
         print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
 
     def get_num_params(self, non_embedding=True):
-        """
-        Return the number of parameters in the model.
-        For non-embedding count (default), the position embeddings get subtracted.
-        The token embeddings would too, except due to parameter sharing these
-        params are actually used as weights in the final layer, so we include them.
-        """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
-            n_params -= self.transformer.wpe.weight.numel()
+        if non_embedding: n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
+            if module.bias is not None: torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         elif isinstance(module, LayerNorm):
-             # Initialize LayerNorm bias to zero if it exists
-             if module.bias is not None:
-                 torch.nn.init.zeros_(module.bias)
-             # Weight is already initialized to ones by default in LayerNorm constructor
+             if module.bias is not None: torch.nn.init.zeros_(module.bias)
 
+    # --- Modified GPT Forward for pos_tags flow ---
     def forward(self, idx, targets=None):
         device = idx.device; b, t = idx.size()
-        # --- Input Length Handling ---
         if t > self.config.block_size:
             idx = idx[:, -self.config.block_size:]; t = self.config.block_size
             if targets is not None: targets = targets[:, -self.config.block_size:]
 
-        # --- Embeddings ---
         pos = torch.arange(0, t, dtype=torch.long, device=device)
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
         original_T = t
+        pos_tags = None # Initialize pos_tags
 
         # --- LMA Initial Transformation ---
         if self.initial_lma_transform is not None:
-            x = self.initial_lma_transform(x) # -> (B, L_new, d_new)
+            # Transform now returns a tuple (z, pos_tags)
+            x, pos_tags = self.initial_lma_transform(x)
+            # x shape: (B, L_new, d_new), pos_tags shape: (B, L_new, 2)
 
         # --- Transformer Blocks ---
-        for block in self.transformer.h: x = block(x)
+        for block in self.transformer.h:
+            # Pass pos_tags only to LMA blocks
+            if isinstance(block.attn, LatentMetaAttention):
+                if pos_tags is None: # Sanity check
+                    raise RuntimeError("pos_tags are required for LMA block but are None.")
+                # LMA Block forward now expects pos_tags and returns (output, pos_tags)
+                x, pos_tags = block(x, pos_tags=pos_tags)
+            else:
+                # MHA Block forward expects only x and returns only x
+                x, _ = block(x, pos_tags=None) # Pass None, ignore second return val
 
         # --- LMA Decoder ---
+        # Decoder only needs the data 'x', not the pos_tags
         if self.lma_decoder is not None:
             x = self.lma_decoder(x, original_T) # -> (B, T, d_output)
 
         # --- Final Layers ---
         x = self.transformer.ln_f(x) # -> (B, T, final_dim)
+        logits = self.lm_head(x) # (B, T, vocab_size)
 
-        # --- Calculate Logits for the *entire* sequence ---
-        logits = self.lm_head(x) # Shape: (B, T, vocab_size)
-
-        # --- Calculate Loss *only* if targets are provided ---
+        loss = None
         if targets is not None:
-            # Training: calculate loss using all logits
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
-            # Inference: loss is None
-            loss = None
 
-        # Return full sequence logits and optional loss
         return logits, loss
+    # --- End Modified GPT Forward ---
 
     def crop_block_size(self, block_size):
-        # TODO: implement this
-        # note: Requires handling Positional Embeddings and potentially LMA masks/configs if block_size changes L
-        # For now, raise error or ignore. LMA makes this complex.
-        # assert block_size <= self.config.block_size # cannot grow block size
-        # self.config.block_size = block_size
-        # self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
-        # if hasattr(self.transformer, 'bias'): # For non-flash MHA
-        #    self.transformer.bias = self.transformer.bias[:,:,:block_size,:block_size]
         print("Warning: crop_block_size not fully implemented, especially for LMA.")
         raise NotImplementedError("LMA block size cropping not fully supported yet.")
 
     @classmethod
     def from_pretrained(cls, model_type, override_args=None):
-        # TODO: implement loading pretrained weights (e.g., from HuggingFace)
-        # Needs careful mapping of weights, especially if using LMA.
         print(f"Warning: from_pretrained not implemented for model_type '{model_type}'.")
         raise NotImplementedError("Loading pretrained models not supported yet.")
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
-        """
-        This long function is unfortunately doing something very simple and is being very defensive:
-        We are separating out all parameters of the model into two buckets: those that will experience
-        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
-        We are then returning the PyTorch optimizer object.
-        """
-        # start with all of the candidate parameters
         param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
         decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
         nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
-        ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
+        optim_groups = [{'params': decay_params, 'weight_decay': weight_decay}, {'params': nodecay_params, 'weight_decay': 0.0}]
+        num_decay_params = sum(p.numel() for p in decay_params); num_nodecay_params = sum(p.numel() for p in nodecay_params)
         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type.startswith('cuda')
-        extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
-
-        return optimizer
+        extra_args = dict(fused=True) if use_fused else dict(); optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        print(f"using fused AdamW: {use_fused}"); return optimizer
 
     def estimate_mfu(self, fwdbwd_per_iter, dt):
-        """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
-        # first estimate the number of flops we do per iteration.
-        # see PaLM paper Appendix B // https://arxiv.org/abs/2204.02311 for details
-        N = self.get_num_params()
-        cfg = self.config
+        N = self.get_num_params(); cfg = self.config
         L, H, Q, T = cfg.n_layer, cfg.n_head, cfg.n_embd//cfg.n_head, cfg.block_size
-        flops_per_token = 6*N + 12*L*H*Q*T
-        flops_per_fwdbwd = flops_per_token * T
-        flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter # number of microsteps per step
-        # express our flops throughput as ratio of A100 bfloat16 peak flops
-        flops_achieved = flops_per_iter * (1.0/dt) # per second
-        flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
+        flops_per_token = 6*N + 12*L*H*Q*T; flops_per_fwdbwd = flops_per_token * T
+        flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter
+        flops_achieved = flops_per_iter * (1.0/dt); flops_promised = 312e12
         mfu = flops_achieved / flops_promised
-        # --- Adjust MFU for LMA ---
-        # This estimation is based on standard MHA. LMA changes computation significantly.
-        # The initial transform, latent attention, and decoder have different costs.
-        # A precise MFU for LMA would require detailed FLOP counting of each component.
-        # For now, we just return the MHA-based estimate with a warning.
         print("WARNING: MFU estimate based on standard MHA, may be inaccurate for LMA.")
-        # Heuristic adjustment: Reduce MFU if LMA seems cheaper? (e.g., smaller latent dim)
-        adjustment_factor = 0.8 # Placeholder adjustment
-        return mfu * adjustment_factor
+        adjustment_factor = 0.8; return mfu * adjustment_factor
 
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
-        """
-        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
-        the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
-        """
-        self.eval() # Ensure model is in eval mode
+        self.eval()
         for _ in range(max_new_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
-            # forward the model to get the logits for the index in the sequence
-            logits, _ = self(idx_cond) # Runs full forward pass (incl. decoder if LMA)
-            # pluck the logits at the final step and scale by desired temperature
-            # logits shape is (B, T_cond, V), we need the last position T_cond-1
-            logits = logits[:, -1, :] / temperature
-            # optionally crop the logits to only the top k options
+            logits, _ = self(idx_cond) # Forward pass gets full logits (B, T, V) now
+            logits = logits[:, -1, :] / temperature # Select last token's logits
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
-            # apply softmax to convert logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
-            # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1)
-            # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-        self.train() # Return model to train mode if needed elsewhere
+        self.train()
         return idx
 
 # -----------------------------------------------------------------------------
-# HellaSwag evaluation logic
+# HellaSwag evaluation logic (Uses self-contained context)
 # -----------------------------------------------------------------------------
 
 def get_most_likely_row(tokens, mask, logits):
-    # Evaluate the autoregressive loss at all positions
-    # logits shape: (batch_size, T, vocab_size)
-    # tokens shape: (batch_size, T)
-    # mask shape: (batch_size, T) where 1 means evaluate loss
-    shift_logits = logits[..., :-1, :].contiguous() # Shape: (batch, T-1, V)
-    shift_tokens = tokens[..., 1:].contiguous()     # Shape: (batch, T-1)
-    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1)) # Shape: (batch*(T-1), V)
-    flat_shift_tokens = shift_tokens.view(-1)                         # Shape: (batch*(T-1),)
+    # logits: (B=4, T, V), tokens: (B=4, T)
+    # Needs logits for T-1 positions
+    if logits.shape[1] <= 1: # Cannot compute loss if sequence length is 1 or less
+         print(f"Warning (get_most_likely_row): Logits sequence length ({logits.shape[1]}) <= 1. Cannot compute loss.")
+         # Return a default choice (e.g., 0) or handle as error
+         return 0 # Default to first choice
 
-    # Calculate loss per token, but don't reduce yet
+    shift_logits = logits[..., :-1, :].contiguous() # (B, T-1, V)
+    shift_tokens = tokens[..., 1:].contiguous()     # (B, T-1)
+
+    # Check shapes before flattening
+    if shift_logits.shape[0] == 0 or shift_logits.shape[1] == 0:
+         print(f"Warning (get_most_likely_row): shift_logits became empty (shape: {shift_logits.shape}). Cannot compute loss.")
+         return 0
+    if shift_tokens.shape[0] == 0 or shift_tokens.shape[1] == 0:
+         print(f"Warning (get_most_likely_row): shift_tokens became empty (shape: {shift_tokens.shape}). Cannot compute loss.")
+         return 0
+
+
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1))
+    flat_shift_tokens = shift_tokens.view(-1)
+
+    # Check target size matches input size for cross_entropy
+    if flat_shift_logits.shape[0] != flat_shift_tokens.shape[0]:
+        print(f"ERROR (get_most_likely_row): Size mismatch! Logits flat batch: {flat_shift_logits.shape[0]}, Tokens flat batch: {flat_shift_tokens.shape[0]}")
+        print(f"  Original shapes: Logits {logits.shape}, Tokens {tokens.shape}")
+        return 0 # Cannot compute
+
     shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
-    shift_losses = shift_losses.view(tokens.size(0), -1) # Shape: (batch, T-1)
-
-    # Now get the average loss just for the completion region (where mask == 1)
-    # Shift mask to align with shifted losses/tokens
-    shift_mask = mask[..., 1:].contiguous() # Shape: (batch, T-1)
+    shift_losses = shift_losses.view(tokens.size(0), -1) # (B, T-1)
+    shift_mask = mask[..., 1:].contiguous() # (B, T-1)
     masked_shift_losses = shift_losses * shift_mask
-
-    # Sum and divide by the number of loss tokens (prevent division by zero)
     sum_loss = masked_shift_losses.sum(dim=1)
     num_loss_tokens = shift_mask.sum(dim=1)
-    avg_loss = sum_loss / (num_loss_tokens + 1e-6) # Add epsilon for stability
-
-    # Handle cases where num_loss_tokens is 0 (no completion tokens?)
-    # In this case, avg_loss will be 0. Assign a high loss instead?
-    # If a row had zero completion tokens, its loss should be penalized.
-    # Let's check for num_loss_tokens == 0 and assign infinity?
+    avg_loss = sum_loss / (num_loss_tokens + 1e-6)
     avg_loss[num_loss_tokens == 0] = float('inf')
-
-
-    # Now find the choice (row) with the minimal average loss
     pred_norm = avg_loss.argmin().item()
     return pred_norm
 
 @torch.no_grad()
-# Remove ctx from signature, hellaswag_path has a default
 def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
-    """
-    Runs HellaSwag evaluation and returns accuracy.
-    Determines its own autocast context based on the model's device.
-    Defaults to float32 context for evaluation stability.
-    """
-    assert isinstance(enc, Encoding), "Encoder `enc` must be a tiktoken Encoding object"
+    """ Runs HellaSwag evaluation. Determines its own autocast context. """
+    assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding"
     print(f"Evaluating HellaSwag from {hellaswag_path}...")
-    num_correct_norm = 0
-    num_total = 0
-
-    # --- File Check/Download Logic ---
+    num_correct_norm = 0; num_total = 0
     if not os.path.exists(hellaswag_path):
-        print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
-        data_dir = os.path.dirname(hellaswag_path)
+        print(f"Error: HellaSwag file not found: {hellaswag_path}"); data_dir = os.path.dirname(hellaswag_path)
         if not os.path.exists(data_dir): os.makedirs(data_dir)
         val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
-        print(f"Attempting to download from {val_url}...")
+        print(f"Attempting download from {val_url}..."); import requests
         try:
-            import requests # Local import
-            with requests.get(val_url, stream=True) as r:
-                r.raise_for_status()
-                with open(hellaswag_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+            with requests.get(val_url, stream=True) as r: r.raise_for_status()
+            with open(hellaswag_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
             print("Download successful.")
-        except Exception as e:
-            print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
-            return -1.0 # Indicate error
-    # --- End File Check ---
-
-    # Determine device and evaluation context INSIDE the function
+        except Exception as e: print(f"Download failed: {e}. Cannot eval."); return -1.0
     model_device = next(model.parameters()).device
     device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
-
-    eval_ctx = nullcontext() # Default context
+    eval_ctx = nullcontext()
     if device_type == 'cuda':
-        # Use float32 for evaluation by default for stability
         print("DEBUG: Using torch.float32 context for HellaSwag model call.")
-        eval_dtype = torch.float32
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=eval_dtype)
-    # --- End Context Determination ---
-
+        eval_dtype = torch.float32; eval_ctx = torch.amp.autocast(device_type=device_type, dtype=eval_dtype)
     try:
         with open(hellaswag_path, 'r') as f:
             for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
-                example = json.loads(line)
-                num_total += 1
-                ctx = example['ctx']
-                label = example['label']
-                endings = example['endings']
-
+                example = json.loads(line); num_total += 1
+                ctx = example['ctx']; label = example['label']; endings = example['endings']
                 ctx_tokens = enc.encode(ctx)
-                if not ctx_tokens:
-                    print(f"Warning: Skipping example with empty context: {example.get('activity_label', 'N/A')}")
-                    num_total -=1
-                    continue
-
-                tok_rows = []
-                mask_rows = []
-
+                if not ctx_tokens: print(f"Warning: Skipping empty context."); num_total -=1; continue
+                tok_rows = []; mask_rows = []
                 for end in endings:
                     completion_tokens = enc.encode(end)
                     tok = ctx_tokens + completion_tokens
                     mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
-
-                    # Truncate to model's block size from the left
                     if len(tok) > model.config.block_size:
                         num_completion_tokens = len(completion_tokens)
                         max_ctx_len = model.config.block_size - num_completion_tokens
                         if max_ctx_len < 0:
-                             # print(f"Warning: Completion longer than block size ({num_completion_tokens} > {model.config.block_size}). Truncating.") # Reduce noise
                              completion_tokens = completion_tokens[:model.config.block_size]
-                             tok = completion_tokens
-                             mask = [1] * len(tok)
-                             max_ctx_len=0
-
-                        start_index = max(0, len(ctx_tokens) - max_ctx_len)
-                        truncated_ctx_tokens = ctx_tokens[start_index:]
-                        tok = truncated_ctx_tokens + completion_tokens
-                        mask = [0]*len(truncated_ctx_tokens) + [1]*len(completion_tokens)
-
-                        if len(tok) > model.config.block_size:
-                             # print(f"Warning: Final truncation needed (len={len(tok)}).") # Reduce noise
-                             tok = tok[-model.config.block_size:]
-                             mask = mask[-model.config.block_size:]
-
-                    # Handle case where tok might become length 1 after truncation
-                    if len(tok) <= 1:
-                         print(f"Warning: Skipping ending due to token length <= 1 after processing. Ending: '{end[:50]}...'")
-                         # Append placeholder tensors to maintain batch size of 4
-                         # Need to know max_len later, so can't skip entirely easily.
-                         # Pad to a minimum length? Or handle in get_most_likely_row?
-                         # Let's pad to length 2 for now to avoid errors downstream.
-                         tok = tok + [0] * (2 - len(tok)) # Pad with 0 token index
-                         mask = mask + [0] * (2 - len(mask))
-                         # Ensure length doesn't exceed block size if it started > 1
-                         tok = tok[:model.config.block_size]
-                         mask = mask[:model.config.block_size]
-
-
-                    tok_rows.append(torch.tensor(tok, dtype=torch.long))
-                    mask_rows.append(torch.tensor(mask, dtype=torch.long))
-
-                # Pad batch to max length
-                # Check if tok_rows is empty (shouldn't happen with padding above)
-                if not tok_rows: continue # Skip example if all endings were invalid
-
+                             tok = completion_tokens; mask = [1] * len(tok); max_ctx_len=0
+                        start_index = max(0, len(ctx_tokens) - max_ctx_len); truncated_ctx_tokens = ctx_tokens[start_index:]
+                        tok = truncated_ctx_tokens + completion_tokens; mask = [0]*len(truncated_ctx_tokens) + [1]*len(completion_tokens)
+                        if len(tok) > model.config.block_size: tok = tok[-model.config.block_size:]; mask = mask[-model.config.block_size:]
+                    if len(tok) <= 1: tok = tok + [0] * (2 - len(tok)); mask = mask + [0] * (2 - len(mask))
+                    tok = tok[:model.config.block_size]; mask = mask[:model.config.block_size]
+                    tok_rows.append(torch.tensor(tok, dtype=torch.long)); mask_rows.append(torch.tensor(mask, dtype=torch.long))
+                if not tok_rows: continue
                 max_len = max(len(row) for row in tok_rows)
-                # Ensure max_len is at least 2 to prevent errors in shift_logits/tokens
-                if max_len <= 1:
-                    print(f"Warning: max_len <= 1 for HellaSwag example. Forcing max_len=2.")
-                    max_len = 2
-
-                tokens = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
-                mask = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
+                if max_len <= 1: max_len = 2 # Ensure min length 2
+                tokens = torch.zeros((len(tok_rows), max_len), dtype=torch.long); mask = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
                 for i, (tok_row, mask_row) in enumerate(zip(tok_rows, mask_rows)):
-                    current_len = len(tok_row)
-                    tokens[i, :current_len] = tok_row
-                    mask[i, :current_len] = mask_row
-
-                # Move batch to model's device
-                tokens = tokens.to(model_device)
-                mask = mask.to(model_device)
-
-                # Get logits from the model using the determined context
+                    current_len = len(tok_row); tokens[i, :current_len] = tok_row; mask[i, :current_len] = mask_row
+                tokens = tokens.to(model_device); mask = mask.to(model_device)
                 model.eval()
-                with eval_ctx:
-                    logits, _ = model(tokens) # logits shape (4, max_len, V)
-
-                # Check for NaNs/Infs in logits
+                with eval_ctx: logits, _ = model(tokens) # Now returns full logits (B, T, V)
                 if torch.isnan(logits).any() or torch.isinf(logits).any():
-                    print(f"ERROR: NaNs or Infs detected in logits during HellaSwag eval!")
-                    # Assign a default prediction if logits are invalid
-                    pred_norm = 0 # Or label % 4 to cycle? Let's use 0.
+                    print(f"ERROR: NaNs/Infs detected in HellaSwag logits!"); pred_norm = 0
                 else:
-                    # Only calculate if logits are valid
-                    try:
-                        pred_norm = get_most_likely_row(tokens, mask, logits)
-                    except ValueError as e:
-                         # Catch potential errors from get_most_likely_row itself
-                         print(f"ERROR during get_most_likely_row: {e}")
-                         print(f"  Logits shape: {logits.shape}, Tokens shape: {tokens.shape}")
-                         import traceback; traceback.print_exc()
-                         pred_norm = 0 # Default prediction on error
-
-                # Check if prediction matches label
-                if pred_norm == label:
-                    num_correct_norm += 1
-
-    except FileNotFoundError: # Should be handled by check above
-        print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
-        return -1.0
-    except Exception as e:
-        print(f"Error during HellaSwag evaluation loop: {e}")
-        import traceback; traceback.print_exc()
-        return -1.0 # Indicate error
-
-    # Final accuracy calculation
+                    try: pred_norm = get_most_likely_row(tokens, mask, logits)
+                    except ValueError as e: print(f"ERROR during get_most_likely_row: {e}"); import traceback; traceback.print_exc(); pred_norm = 0
+                if pred_norm == label: num_correct_norm += 1
+    except FileNotFoundError: print(f"Error: HellaSwag file not found: {hellaswag_path}"); return -1.0
+    except Exception as e: print(f"Error during HellaSwag eval loop: {e}"); import traceback; traceback.print_exc(); return -1.0
     acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0
-    print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})")
-    return acc_norm
+    print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})"); return acc_norm
 
 # -----------------------------------------------------------------------------
-# Example Usage (Modified for direct execution)
+# Example Usage
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
-    # Configuration for LMA
+    # --- Example Config (Small LMA) ---
     config_args = dict(
-        block_size=128, # Smaller block size for faster testing
-        vocab_size=50257, # Use actual GPT2 vocab size
-        n_layer=4,      # Fewer layers
-        n_head=4,       # Needs to divide n_embd (e.g., 4)
-        n_embd=128,     # d0 (Must be divisible by n_head) (e.g., 128)
-        dropout=0.1,
-        bias=True,
-        use_lma=True,           # <--- Enable LMA
-        lma_reduction_factor=2, # k=2 -> target L_new=64, target d_new=64
+        block_size=128, vocab_size=50257, n_layer=4, n_head=4, n_embd=128,
+        dropout=0.1, bias=True, use_lma=True, lma_reduction_factor=2,
     )
+    # --- OR GPT-2 Config (Large LMA) ---
+    # config_args = dict(
+    #     block_size=1024, vocab_size=50257, n_layer=12, n_head=12, n_embd=768,
+    #     dropout=0.0, bias=True, use_lma=True, lma_reduction_factor=3, # Example with factor 3
+    # )
+
     gpt_config = GPTConfig(**config_args)
+    print("\n--- Model Configuration ---"); print(gpt_config)
+    print("\n--- Initializing Model ---"); model = GPT(gpt_config)
 
-    print("\n--- Model Configuration ---")
-    print(gpt_config)
-    print("\n--- Initializing Model ---")
-    model = GPT(gpt_config)
-    print("\n--- Model Structure ---")
-    # print(model) # Can be very verbose, print summary instead maybe
-
-    # --- Simple Forward/Backward Test ---
     print("\n--- Testing Forward/Backward Pass ---")
-    B = 4
-    T = gpt_config.block_size # Use full block size for test
-    T_short = T // 2         # Test with shorter sequence too
-
+    B = 4; T = gpt_config.block_size; T_short = T // 2
     dummy_input_full = torch.randint(0, gpt_config.vocab_size, (B, T))
-    dummy_targets_full = torch.randint(0, gpt_config.vocab_size, (B, T)) # Use -1 for ignore? No, use actual tokens
-
+    dummy_targets_full = torch.randint(0, gpt_config.vocab_size, (B, T))
     dummy_input_short = torch.randint(0, gpt_config.vocab_size, (B, T_short))
     dummy_targets_short = torch.randint(0, gpt_config.vocab_size, (B, T_short))
 
-    # Determine device
-    if torch.cuda.is_available():
-        device = 'cuda'
-    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built():
-         # Check if running under torchrun/DDP which conflicts with MPS
-         import os
-         if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-              print("Warning: DDP environment detected, forcing CPU due to potential MPS incompatibility.")
-              device = 'cpu'
-         else:
-              device = 'mps'
-    else:
-        device = 'cpu'
-
-    print(f"Using device: {device}")
-    model.to(device)
-
+    if torch.cuda.is_available(): device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built(): device = 'mps' if "RANK" not in os.environ else 'cpu'
+    else: device = 'cpu'
+    print(f"Using device: {device}"); model.to(device)
     optimizer = model.configure_optimizers(weight_decay=1e-1, learning_rate=1e-4, betas=(0.9, 0.95), device_type=device)
 
-    # --- Test Full Length ---
-    print(f"\nTesting with T = {T}...")
-    dummy_input = dummy_input_full.to(device)
-    dummy_targets = dummy_targets_full.to(device)
-    try:
-        model.train() # Ensure train mode
-        optimizer.zero_grad()
-        logits, loss = model(dummy_input, dummy_targets)
-        print("Forward pass successful!")
-        print(f"  Logits shape: {logits.shape}") # Should be (B, T, Vocab)
-        if loss is not None:
-             print(f"  Loss: {loss.item()}")
-             loss.backward()
-             optimizer.step()
-             print("Backward pass and optimizer step successful!")
-        else:
-             print("  Loss is None (should not happen in training).")
-    except Exception as e:
-        print(f"\n !!! Error during forward/backward pass (T={T}) !!!"); print(e); import traceback; traceback.print_exc()
+    for seq_len_label, dummy_input, dummy_targets in [ (f"T = {T}", dummy_input_full, dummy_targets_full), (f"T = {T_short}", dummy_input_short, dummy_targets_short) ]:
+        print(f"\nTesting with {seq_len_label}...")
+        dummy_input = dummy_input.to(device); dummy_targets = dummy_targets.to(device)
+        try:
+            model.train(); optimizer.zero_grad()
+            logits, loss = model(dummy_input, dummy_targets)
+            print("Forward pass successful!")
+            print(f"  Logits shape: {logits.shape}") # Should be (B, T_current, Vocab)
+            if loss is not None:
+                 print(f"  Loss: {loss.item()}")
+                 loss.backward(); optimizer.step()
+                 print("Backward pass and optimizer step successful!")
+            else: print("  Loss is None.")
+        except Exception as e: print(f"\n !!! Error FWD/BWD ({seq_len_label}) !!!"); print(e); import traceback; traceback.print_exc()
 
-    # --- Test Short Length ---
-    print(f"\nTesting with T = {T_short}...")
-    dummy_input = dummy_input_short.to(device)
-    dummy_targets = dummy_targets_short.to(device)
-    try:
-        model.train() # Ensure train mode
-        optimizer.zero_grad()
-        logits, loss = model(dummy_input, dummy_targets)
-        print("Forward pass successful!")
-        print(f"  Logits shape: {logits.shape}") # Should be (B, T_short, Vocab)
-        if loss is not None:
-             print(f"  Loss: {loss.item()}")
-             loss.backward()
-             optimizer.step()
-             print("Backward pass and optimizer step successful!")
-        else:
-             print("  Loss is None (should not happen in training).")
-    except Exception as e:
-        print(f"\n !!! Error during forward/backward pass (T={T_short}) !!!"); print(e); import traceback; traceback.print_exc()
-
-
-    # Test generation
     print("\n--- Testing Generation ---")
     try:
-        start_ids = torch.randint(0, gpt_config.vocab_size, (1, 10), device=device) # Start with 10 tokens
-        model.eval() # Set model to evaluation mode
+        start_ids = torch.randint(0, gpt_config.vocab_size, (1, 10), device=device)
+        model.eval()
         generated_ids = model.generate(start_ids, max_new_tokens=20, temperature=0.8, top_k=5)
-        print("Generation successful!")
-        print(f"  Input IDs shape: {start_ids.shape}")
-        print(f"  Generated IDs shape: {generated_ids.shape}") # Should be (1, 10+20)
-        # print(f"  Generated sequence: {generated_ids.tolist()}") # Optional: print tokens
-    except Exception as e:
-        print("\n !!! Error during generation !!!"); print(e); import traceback; traceback.print_exc()
+        print("Generation successful!"); print(f"  Input shape: {start_ids.shape}"); print(f"  Generated shape: {generated_ids.shape}")
+    except Exception as e: print("\n !!! Error Generation !!!"); print(e); import traceback; traceback.print_exc()
 
-    # Optional: HellaSwag Test (requires tiktoken)
-    print("\n--- Testing HellaSwag (requires tiktoken) ---")
+    print("\n--- Testing HellaSwag ---")
     try:
-        import tiktoken
-        enc = tiktoken.get_encoding("gpt2")
-        # Make sure the path to hellaswag_val.jsonl is correct
-        # Or let the function try to download it to data/hellaswag/
+        import tiktoken; enc = tiktoken.get_encoding("gpt2")
         hs_path = os.path.join('data', 'hellaswag', 'hellaswag_val.jsonl')
         accuracy = evaluate_hellaswag(model, enc, hs_path)
-        print(f"HellaSwag evaluation finished. Accuracy: {accuracy:.4f}")
-    except ImportError:
-        print("tiktoken not installed, skipping HellaSwag evaluation.")
-        print("Install with: pip install tiktoken")
-    except Exception as e:
-        print(f"\n !!! Error during HellaSwag evaluation !!!"); print(e); import traceback; traceback.print_exc()
+        print(f"HellaSwag eval finished. Accuracy: {accuracy:.4f}")
+    except ImportError: print("tiktoken not installed, skipping HellaSwag.")
+    except Exception as e: print(f"\n !!! Error HellaSwag !!!"); print(e); import traceback; traceback.print_exc()
