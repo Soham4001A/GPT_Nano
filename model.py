@@ -8,12 +8,14 @@ including an Initial Transform, Latent Attention Blocks, and a Learnable Decoder
 import math
 import inspect
 from dataclasses import dataclass, field # Import field
-
+import os
+import tqdm, json
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 from contextlib import nullcontext # Make sure nullcontext is imported if used
+from tiktoken.core import Encoding
 
 # -----------------------------------------------------------------------------
 # Helper Functions for LMA
