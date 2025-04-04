@@ -497,7 +497,7 @@ class GPT(nn.Module):
             # Instantiate block - it handles internal logic and ensures output is d0
             block = Block(config, block_lma_config)
             blocks.append(block)
-            print(f" Appending Block {i}: Type={'LMA' if block.use_lma else 'MHA'}, Output Dim={block.output_dim}") # Block output is always d0
+            print(f" Appending Block {i}: Type={'LMA' if block.use_lma else 'MHA'}, Output Dim={block.lma_output_dim}") # Block output is always d0
 
         self.transformer['h'] = nn.ModuleList(blocks)
 
