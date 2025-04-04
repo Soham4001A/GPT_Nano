@@ -293,7 +293,7 @@ class MLP(nn.Module):
 
 class Block(nn.Module):
     """ Transformer Block: Handles MHA (preserves dims) or LMA (changes dims) """
-    def __init__(self, config: GPTConfig, lma_config: LMAConfig = None, input_L=None, input_d=None):
+    def __init__(self, config: LMAConfig, lma_config: LMAConfig = None, input_L=None, input_d=None):
         super().__init__()
         self.use_lma = lma_config is not None
 
