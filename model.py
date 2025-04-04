@@ -460,11 +460,21 @@ class GPT(nn.Module):
         if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
 
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02);
-        if module.bias is not None: torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if isinstance(module, nn.Linear):
+            # Initialize Linear weight
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # Initialize Linear bias ONLY if it exists
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            # Initialize Embedding weight
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # Embeddings DO NOT have a bias, so no check needed here
         elif isinstance(module, LayerNorm):
-             if module.bias is not None: torch.nn.init.zeros_(module.bias)
+            # LayerNorm weight is initialized to ones in its constructor
+            # Initialize LayerNorm bias ONLY if it exists
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
 
     def forward(self, idx, targets=None):
         device = idx.device; b, t = idx.size()
