@@ -562,7 +562,7 @@ class GPT(nn.Module):
                     align_corners=False       # Common for linear
                 )
                 x = x_upsampled_permuted.permute(0, 2, 1) # -> (B, T, D_final)
-                print(f"Upsampled x shape: {x.shape}")
+                #print(f"Upsampled x shape: {x.shape}")
 
             # Now sequence length is T, dimension is D_final
             logits = self.lm_head(x) # LM head maps D_final -> vocab_size
