@@ -518,67 +518,61 @@ class GPT(nn.Module):
          return idx
 
     def forward(self, idx, targets=None):
-        device = idx.device
+        # ... (previous code: embeddings, initial transform, block loop) ...
+        device = idx.device # Get device early
         b, t = idx.size()
-        # Input length handling
         pos = torch.arange(0, t, dtype=torch.long, device=device)
         if t > self.config.block_size:
             idx = idx[:, -self.config.block_size:]; pos = pos[-self.config.block_size:]; t = self.config.block_size
             if targets is not None: targets = targets[:, -self.config.block_size:]
 
-        # Embeddings
         tok_emb = self.transformer.wte(idx); pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb) # (b, t, n_embd)
 
-        # --- Apply Initial LMA Transform if enabled ---
+        target_len_for_loss = t # Store original sequence length needed for targets
+
         if self.initial_lma_transform is not None:
-             # This transform expects input T == config.block_size
-             if t != self.config.block_size:
-                  raise NotImplementedError(f"Initial LMA transform requires T({t}) == block_size({self.config.block_size})")
+             if t != self.config.block_size: raise NotImplementedError(f"Initial LMA transform T({t})!=L({self.config.block_size})")
              x = self.initial_lma_transform(x) # Output (B, latent_L, latent_d)
-             # Update t to reflect new latent length for loss check / final logit selection
-             t_final = self.latent_L # The sequence length after transform
-        else:
-             t_final = t # Sequence length remains original t
 
-        # Apply transformer blocks sequentially
         for block in self.transformer.h:
-             # Pass the current sequence length expected by the block
-             # For MHA, T can vary. For LMA internal mask, we assume T=L_latent
-             current_block_input_len = x.size(1)
-             x = block(x, current_block_input_len) # Block preserves L_latent/d_latent if LMA
+             current_block_input_len = x.size(1) # Get current seq len
+             # LMA requires block.input_L == current_block_input_len
+             if isinstance(block.attn, LatentMetaAttention) and current_block_input_len != block.input_L:
+                   raise NotImplementedError(f"LMA Block requires input T={current_block_input_len} == configured L={block.input_L}")
+             # Pass sequence length if needed (though LMA currently errors if T != L)
+             x = block(x, current_block_input_len)
 
-        x = self.transformer.ln_f(x) # Applied to final block output dim (latent_d if LMA)
+        x = self.transformer.ln_f(x) # Final shape (B, L_final, D_final)
+        final_latent_x = x # Keep for inference
 
-        # --- Output Head & Loss ---
+        # --- Upsampling/Projection for Loss Calculation ---
         if targets is not None:
-            logits = self.lm_head(x) # Input (B, t_final, latent_d), Output (B, t_final, vocab_size)
+            # Check if sequence length needs adjustment
+            if x.size(1) != target_len_for_loss:
+                latent_len = x.size(1)
+                print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len_for_loss}. Upsampling via Interpolation...")
 
-            # Problem: Targets are (B, T). Logits are (B, t_final). Need to match.
-            # Apply the upsampling fix HERE, after all blocks and ln_f.
-            if logits.size(1) != targets.size(1):
-                target_len = targets.size(1)    # Original T
-                latent_len = logits.size(1)     # t_final (L_new after blocks)
-                #print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len}. Upsampling logits...")
-                if latent_len == 0: raise RuntimeError("Latent sequence length is zero!")
-                if target_len % latent_len != 0: raise RuntimeError(f"Cannot upsample: Target L ({target_len}) not multiple of Latent L ({latent_len}).")
-                upsample_factor = target_len // latent_len
+                # Use Interpolation
+                x_permuted = x.permute(0, 2, 1) # -> (B, D_final, L_final)
+                x_upsampled_permuted = F.interpolate(
+                    x_permuted,
+                    size=target_len_for_loss, # Target original sequence length T
+                    mode='linear',            # Or 'nearest'
+                    align_corners=False       # Common for linear
+                )
+                x = x_upsampled_permuted.permute(0, 2, 1) # -> (B, T, D_final)
+                print(f"Upsampled x shape: {x.shape}")
 
-                # Upsample logits using repeat_interleave
-                # Reshape logits to allow repeat on seq dim: (B, L_new, V) -> (B*L_new, V)
-                # Repeat: (B*L_new*factor, V)
-                # Reshape back: (B, L_new*factor, V) = (B, T, V)
-                V = logits.size(-1)
-                logits_upsampled = logits.repeat_interleave(upsample_factor, dim=1)
-                # Ensure shape is correct
-                if logits_upsampled.size(1) != target_len:
-                     raise RuntimeError(f"Upsampling Error: Output L {logits_upsampled.size(1)} != Target L {target_len}")
-                logits = logits_upsampled # Use upsampled logits
-
-            # Now sequence lengths match
+            # Now sequence length is T, dimension is D_final
+            logits = self.lm_head(x) # LM head maps D_final -> vocab_size
+            if logits.size(1) != targets.size(1): # Final check
+                 raise RuntimeError(f"Loss Calc Error (Post-Upsample): Logits L {logits.size(1)} != Targets L {targets.size(1)}")
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else: # Inference
-             logits = self.lm_head(x[:, [-1], :]); loss = None # Use last position of final latent sequence x
+             # Use the *last* token from the *final latent representation* before upsampling
+             logits = self.lm_head(final_latent_x[:, [-1], :])
+             loss = None
 
         return logits, loss
 
