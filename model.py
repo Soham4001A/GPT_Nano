@@ -872,68 +872,45 @@ class GPT(nn.Module):
              # Weight is already initialized to ones by default in LayerNorm constructor
 
     def forward(self, idx, targets=None):
-        device = idx.device
-        b, t = idx.size() # Batch size, Sequence length
-
+        device = idx.device; b, t = idx.size()
         # --- Input Length Handling ---
         if t > self.config.block_size:
-            # Truncate input sequence if longer than block size
-            idx = idx[:, -self.config.block_size:]
-            t = self.config.block_size # Update sequence length
-            # Truncate targets accordingly if they exist
-            if targets is not None:
-                 targets = targets[:, -self.config.block_size:]
+            idx = idx[:, -self.config.block_size:]; t = self.config.block_size
+            if targets is not None: targets = targets[:, -self.config.block_size:]
 
         # --- Embeddings ---
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
-        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd) -> broadcasted? No, need (1, t, n_embd)
-        # pos_emb needs to be added correctly. Let's ensure it's broadcastable.
-        # wpe output is (block_size, n_embd). We need (t, n_embd).
-        pos_emb = self.transformer.wpe(pos) # Shape (t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb) # Shape (b, t, n_embd)
-
-        # Store original sequence length T needed for decoder target length
+        pos = torch.arange(0, t, dtype=torch.long, device=device)
+        tok_emb = self.transformer.wte(idx)
+        pos_emb = self.transformer.wpe(pos)
+        x = self.transformer.drop(tok_emb + pos_emb)
         original_T = t
 
-        # --- LMA Initial Transformation (if applicable) ---
+        # --- LMA Initial Transformation ---
         if self.initial_lma_transform is not None:
-            # Transform handles padding internally if t < block_size
-            x = self.initial_lma_transform(x)
-            # Output x shape: (B, L_new, d_new)
-            # Sequence length dimension is now L_new
+            x = self.initial_lma_transform(x) # -> (B, L_new, d_new)
 
         # --- Transformer Blocks ---
-        # Blocks operate on the current shape of x (either latent or original)
-        for block in self.transformer.h:
-            x = block(x)
-            # Output shape remains (B, L_new, d_new) if LMA, or (B, T, n_embd) if MHA
+        for block in self.transformer.h: x = block(x)
 
-        # --- LMA Decoder (if applicable) ---
+        # --- LMA Decoder ---
         if self.lma_decoder is not None:
-            # Decode back to original sequence length T
-            x = self.lma_decoder(x, original_T)
-            # Output x shape: (B, T, d_output) where d_output is likely d_new
+            x = self.lma_decoder(x, original_T) # -> (B, T, d_output)
 
         # --- Final Layers ---
-        # Apply final LayerNorm
-        x = self.transformer.ln_f(x)
-        # Output shape: (B, T, final_ln_lm_head_dim)
+        x = self.transformer.ln_f(x) # -> (B, T, final_dim)
 
-        # Calculate logits
+        # --- Calculate Logits for the *entire* sequence ---
+        logits = self.lm_head(x) # Shape: (B, T, vocab_size)
+
+        # --- Calculate Loss *only* if targets are provided ---
         if targets is not None:
-            # Training: calculate loss
-            logits = self.lm_head(x) # Shape: (B, T, vocab_size)
-            # Reshape for cross_entropy: (B*T, vocab_size) and (B*T,)
+            # Training: calculate loss using all logits
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
-            # Inference: calculate logits only for the last position.
-            # Note: We still process the full sequence through decoder, LN.
-            # This is slightly inefficient but consistent with training structure.
-            # We could potentially optimize inference later if needed.
-            logits = self.lm_head(x[:, [-1], :]) # Shape: (B, 1, vocab_size)
+            # Inference: loss is None
             loss = None
 
+        # Return full sequence logits and optional loss
         return logits, loss
 
     def crop_block_size(self, block_size):
