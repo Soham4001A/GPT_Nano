@@ -594,7 +594,7 @@ if __name__ == '__main__':
         dropout=0.1,
         bias=True,
         use_lma=True,   # <--- Enable LMA
-        lma_reduction_factor=2, # k=2 -> target L_new=64, target d_new=192
+        lma_reduction_factor=3, # k=2 -> target L_new=64, target d_new=192
         # Removed seq reduction type from GPTConfig
     )
     gpt_config = GPTConfig(**config_args)
