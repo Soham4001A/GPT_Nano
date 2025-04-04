@@ -282,35 +282,43 @@ class LatentMetaAttention(nn.Module):
         self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.resid_dropout = nn.Dropout(self.dropout)
 
-        # --- Causal Mask ---
-        # The mask needs to be generated based on the *original* L and n_h
-        # that *produced* this latent space. LMAConfig provides these.
-        self.original_L_for_mask = lma_latent_config.L # Original L before transform
-        self.original_nH_for_mask = lma_latent_config.n_head_stacking # Original nH before transform
+        # # --- Causal Mask ---
+        # # The mask needs to be generated based on the *original* L and n_h
+        # # that *produced* this latent space. LMAConfig provides these.
+        # self.original_L_for_mask = lma_latent_config.L # Original L before transform
+        # self.original_nH_for_mask = lma_latent_config.n_head_stacking # Original nH before transform
 
-        # Generate mask once on CPU, register as buffer. Moved device transfer to forward.
-        try:
-            print(f"  LMA Attn: Generating causal mask based on original L={self.original_L_for_mask}, nH={self.original_nH_for_mask} for L_latent={self.L_latent}")
-            # Use the L and n_head_stacking from the config that *defined* this latent space
-            lma_mask = get_lma_causal_mask(
-                L=self.original_L_for_mask,
-                n_h=self.original_nH_for_mask,
-                L_new=self.L_latent, # Target latent length
-                device='cpu' # Create on CPU initially
-            )
-            if lma_mask is None:
-                 print("  LMA Attn: WARNING - Causal mask generation failed. Attention will not be causal.")
-                 self.register_buffer("causal_mask_latent", None, persistent=False)
-            else:
-                 # Mask shape should be (L_latent, L_latent)
-                 assert lma_mask.shape == (self.L_latent, self.L_latent)
-                 self.register_buffer("causal_mask_latent", lma_mask, persistent=False)
-                 print(f"  LMA Attn: Registered latent causal mask ({self.L_latent}x{self.L_latent})")
+        # # Generate mask once on CPU, register as buffer. Moved device transfer to forward.
+        # try:
+        #     print(f"  LMA Attn: Generating causal mask based on original L={self.original_L_for_mask}, nH={self.original_nH_for_mask} for L_latent={self.L_latent}")
+        #     # Use the L and n_head_stacking from the config that *defined* this latent space
+        #     lma_mask = get_lma_causal_mask(
+        #         L=self.original_L_for_mask,
+        #         n_h=self.original_nH_for_mask,
+        #         L_new=self.L_latent, # Target latent length
+        #         device='cpu' # Create on CPU initially
+        #     )
+        #     if lma_mask is None:
+        #          print("  LMA Attn: WARNING - Causal mask generation failed. Attention will not be causal.")
+        #          self.register_buffer("causal_mask_latent", None, persistent=False)
+        #     else:
+        #          # Mask shape should be (L_latent, L_latent)
+        #          assert lma_mask.shape == (self.L_latent, self.L_latent)
+        #          self.register_buffer("causal_mask_latent", lma_mask, persistent=False)
+        #          print(f"  LMA Attn: Registered latent causal mask ({self.L_latent}x{self.L_latent})")
 
-        except Exception as e:
-            print(f"ERROR generating LMA causal mask: {e}")
-            import traceback; traceback.print_exc()
-            self.register_buffer("causal_mask_latent", None, persistent=False)
+        # except Exception as e:
+        #     print(f"ERROR generating LMA causal mask: {e}")
+        #     import traceback; traceback.print_exc()
+        #     self.register_buffer("causal_mask_latent", None, persistent=False)
+        # --- ADD THIS INSTEAD ---
+        print(f"  LMA Attn: Using SIMPLE TRIL mask for latent sequence (L_latent={self.L_latent})")
+        # Create a standard lower-triangular mask of size (L_latent, L_latent)
+        simple_mask = torch.tril(torch.ones(self.L_latent, self.L_latent, dtype=torch.bool, device='cpu'))
+        # nn.MultiheadAttention expects True where positions are *masked out* (prevented from attending).
+        # So, we need the *upper* triangle to be True. Invert the lower-triangular mask.
+        simple_mask_inverted = ~simple_mask
+        self.register_buffer("causal_mask_latent", simple_mask_inverted, persistent=False)
 
     def forward(self, z): # Input z is ALREADY LATENT (B, T_latent, d_latent)
         B, T_latent, C_latent = z.size()
@@ -394,7 +402,8 @@ class LMA_InitialTransform(nn.Module):
 
         # Layer for Stage 2b Embedding (mapping C_new -> d_new)
         self.embed_layer_2 = nn.Linear(self.C_new, self.d_new, bias=self.bias)
-        self.embed_layer_2_act = nn.ReLU() # Or nn.GELU()? Using ReLU as specified originally
+        #self.embed_layer_2_act = nn.ReLU() # Or nn.GELU()? Using ReLU as specified originally
+        self.embed_layer_2_act = nn.GELU()
 
     def forward(self, y): # Input y is (B, T, d0) from initial embedding/prev block
         B, T, C = y.size()
@@ -779,7 +788,7 @@ class GPT(nn.Module):
                  # Modify L in block_lma_config *only for mask calculation purpose*.
                  # This is slightly hacky - maybe LMAConfig needs explicit orig_L field?
                  # Let's patch it here for now:
-                block_lma_config.L = config.block_size # Patch L for mask calculation inside LatentMetaAttention
+                #block_lma_config.L = config.block_size # Patch L for mask calculation inside LatentMetaAttention
 
                 # Instantiate block, telling it it's LMA and passing the config
                 block = Block(config, is_lma=True, lma_config=block_lma_config)
