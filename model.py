@@ -1186,10 +1186,24 @@ def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.
 
                 # Get the logits from the model
                 model.eval() # Ensure eval mode
-                logits, _ = model(tokens) # Don't need loss here. Logits shape (4, max_len, V)
+                with ctx: # <-- ADD AUTOCAST CONTEXT
+                    logits, _ = model(tokens)
 
-                # Find the row with the lowest loss based on the mask
-                pred_norm = get_most_likely_row(tokens, mask, logits)
+                if torch.isnan(logits).any() or torch.isinf(logits).any():
+                    print(f"ERROR: NaNs or Infs detected in logits during HellaSwag eval!")
+                    # Optionally print the problematic input 'tokens' here
+                    # print(f"Problematic tokens (first 10): {tokens[:, :10]}")
+                    # Skip this example or return an error metric
+                    # For now, let's skip the row calculation for this example
+                    print(f"Skipping HellaSwag example due to NaN/Inf logits.")
+                    # How to handle skipping? We can't just continue, need to finish the loop.
+                    # Assign a default prediction that's likely wrong?
+                    pred_norm = 0 # Or some other default incorrect label index
+                    # Or maybe raise an exception? Let's try assigning a default first.
+                    # Need to adjust num_total? No, better to just get it wrong.
+                else:
+                    # Only calculate row if logits are valid
+                    pred_norm = get_most_likely_row(tokens, mask, logits)
 
                 # Check if prediction matches label
                 if pred_norm == label:
