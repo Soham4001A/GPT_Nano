@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
+from contextlib import nullcontext # Make sure nullcontext is imported if used
 
 # -----------------------------------------------------------------------------
 # Helper Functions for LMA
@@ -1185,8 +1186,13 @@ def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.
                 mask = mask.to(model_device)
 
                 # Get the logits from the model
-                model.eval() # Ensure eval mode
-                with ctx: # <-- ADD AUTOCAST CONTEXT
+                model.eval()
+                # Ensure ctx is a valid context manager before using
+                if not hasattr(ctx, '__enter__') or not hasattr(ctx, '__exit__'):
+                    print("Warning: Invalid context manager passed to evaluate_hellaswag. Using nullcontext.")
+                    ctx = nullcontext() # Fallback safely
+
+                with ctx: # Use the passed-in ctx
                     logits, _ = model(tokens)
 
                 if torch.isnan(logits).any() or torch.isinf(logits).any():

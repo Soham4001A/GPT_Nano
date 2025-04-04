@@ -317,7 +317,7 @@ if ddp:
 
 # ---- Loss Estimation Function ----
 @torch.no_grad()
-def estimate_loss():
+def estimate_loss(model, ctx):
     out = {}
     model.eval() # Set model to evaluation mode
 
@@ -326,8 +326,15 @@ def estimate_loss():
         losses = torch.zeros(eval_iters, device=device) # Create tensor on correct device
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            with ctx: # Use autocast context
-                logits, loss = model(X, Y)
+            # Ensure ctx is valid
+            if not hasattr(ctx, '__enter__') or not hasattr(ctx, '__exit__'):
+                print(f"Warning: Invalid context manager in estimate_loss for split {split}. Using nullcontext.")
+                current_ctx = nullcontext()
+            else:
+                current_ctx = ctx
+
+            with current_ctx: # Use the passed-in ctx (or fallback)
+                logits, loss = model(X, Y) # Use the passed-in model
             # Check if loss is valid
             if loss is not None and not torch.isnan(loss):
                  losses[k] = loss.item()
@@ -339,14 +346,13 @@ def estimate_loss():
 
     # Evaluate HellaSwag if enabled (only on rank 0)
     if hellaswag and master_process:
-        # Ensure model is on the evaluation device (could be different in DDP)
-        eval_model = model.module if ddp else model
-        # Ensure model is in eval mode (already set)
-        # Move model to CPU for tiktoken if necessary? No, eval_model.to(device) is done before loop
-        hellaswag_acc = evaluate_hellaswag(eval_model, enc, hellaswag_path) # Pass path
-        out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0 # Handle potential errors from eval
-    elif hellaswag: # For non-master processes in DDP
-         out['hellaswag'] = 0.0 # Placeholder, not used for logging
+        eval_model = model.module if ddp else model # Use the passed-in model
+        eval_model.eval() # Ensure eval mode for HellaSwag specifically
+        # Pass the ctx explicitly to evaluate_hellaswag
+        hellaswag_acc = evaluate_hellaswag(eval_model, enc, ctx, hellaswag_path)
+        out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0
+    elif hellaswag:
+         out['hellaswag'] = 0.0
 
     model.train() # Set model back to training mode
     return out
@@ -401,7 +407,10 @@ while True:
 
     # Evaluate loss and save checkpoints
     if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss()
+        # Set model to eval mode before estimating loss
+        model.eval()
+        losses = estimate_loss(model, ctx) # <-- PASS model and ctx
+        model.train() # Set back to train mode after evaluation
         print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
         if hellaswag: print_str += f", HellaSwag Acc: {losses.get('hellaswag', -1):.4f}"
         print(print_str)
