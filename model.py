@@ -588,13 +588,13 @@ if __name__ == '__main__':
     config_args = dict(
         block_size=128, # Smaller block size for faster testing
         vocab_size=50257, # Use actual GPT2 vocab size
-        n_layer=6,      # Fewer layers
-        n_head=6,       # Needs to divide n_embd and d_new
+        n_layer=4,      # Fewer layers
+        n_head=12,       # Needs to divide n_embd and d_new
         n_embd=384,     # d0 (Must be divisible by n_head)
         dropout=0.1,
         bias=True,
         use_lma=True,   # <--- Enable LMA
-        lma_reduction_factor=3, # k=2 -> target L_new=64, target d_new=192
+        lma_reduction_factor=4, # k=2 -> target L_new=64, target d_new=192
         # Removed seq reduction type from GPTConfig
     )
     gpt_config = GPTConfig(**config_args)
