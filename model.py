@@ -223,7 +223,14 @@ class LatentMetaAttention(nn.Module):
 
         attn_scores = attn_scores.masked_fill(dynamic_mask.unsqueeze(1), float('-inf'))
         all_masked_rows = torch.all(attn_scores == float('-inf'), dim=-1)
-        if torch.any(all_masked_rows): print(f"Warning: {torch.sum(all_masked_rows)} attention rows are fully masked.")
+        
+        query_pad_mask_expanded = query_pad_mask.unsqueeze(1).expand(-1, self.n_head_latent, -1, -1) # (B, nH, T_latent, 1)
+        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).view(B * self.n_head_latent, T_latent) # (B*nH, T_latent)
+
+        fully_masked_non_padding = all_masked_rows & (~query_pad_mask_final)
+        if torch.any(fully_masked_non_padding):
+            print(f"WARNING: {torch.sum(fully_masked_non_padding)} NON-PADDING attention rows are fully masked!")
+            
         if torch.isnan(attn_scores).any() or (torch.isinf(attn_scores) & (attn_scores != float('-inf'))).any(): print("NaN/Inf DETECTED in attn_scores AFTER mask!"); return torch.zeros_like(z)
 
         # Safeguarded Softmax
