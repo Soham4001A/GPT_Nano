@@ -62,7 +62,7 @@ bias = False # do we use bias inside LayerNorm and Linear layers?
 use_lma = True
 lma_reduction_factor = 3
 # adamw optimizer
-learning_rate = 2e-4 # max learning rate (changed back from 2e-4 based on common baseline)
+learning_rate = 3e-3 # max learning rate (changed back from 2e-4 based on common baseline)
 max_iters = 600000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
