@@ -331,39 +331,54 @@ class GPTConfig: # Unchanged
     n_embd: int = 768; dropout: float = 0.0; bias: bool = True
     use_lma: bool = False; lma_reduction_factor: int = 2
     
+# --- Block (Revised for Option A - Consistent Latent Space - Corrected Init) ---
 class Block(nn.Module):
-    """ Transformer Block: MHA (preserves dims) or LMA (operates in latent dims) """
+    """ Transformer Block: Handles MHA (preserves dims) or LMA (changes dims) """
+    # REMOVED input_L=None, input_d=None from signature
     def __init__(self, config: GPTConfig, is_lma=False, lma_config: LMAConfig = None):
         super().__init__()
         self.use_lma = is_lma
-        # Determine the actual input/output dimensions for THIS block
-        # In Option A, these change layer by layer. We need the expected input.
-        # This needs modification in GPT.__init__ to pass the correct input_d.
-        # Let's assume GPT init passes correct input_d for now.
-        # For simplicity, removing input_L/input_d from __init__ args, assume set by GPT loop
-        self.input_d = config.n_embd # Placeholder - will be overwritten by GPT init logic
 
+        # Determine block's expected input dimension based on LMA config or main config
         if self.use_lma:
             if lma_config is None: raise ValueError("lma_config needed for LMA block")
-            self.attn = LatentMetaAttention(config, lma_config) # Attention operates in L_new, d_new
-            self.output_d = lma_config.d_new # Block outputs d_new
-            self.ln_1 = LayerNorm(lma_config.d0, bias=config.bias) # LN1 takes LMA input d0
-            self.ln_2 = LayerNorm(lma_config.d_new, bias=config.bias) # LN2 takes latent d_new
-            self.mlp = MLP(config, lma_config.d_new) # MLP takes/outputs latent d_new
-            print(f"Initializing Block (LMA): Expects D={lma_config.d0} -> Outputs D={self.output_d}")
-        else: # MHA Path
-            self.attn = CausalSelfAttention(config) # Operates on n_embd
-            self.output_d = config.n_embd # Block outputs n_embd
-            self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
-            self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
-            self.mlp = MLP(config, config.n_embd) # Operates on n_embd
-            print(f"Initializing Block (MHA): Input/Output D={self.output_d}")
+            self.input_L = lma_config.L # Expected input L comes from LMAConfig d0/L
+            self.input_d = lma_config.d0 # Expected input D comes from LMAConfig d0/L
+            self.output_L = lma_config.L_new # Output L comes from LMAConfig L_new
+            self.output_d = lma_config.d_new # Output D comes from LMAConfig d_new
+        else: # MHA
+            self.input_L = config.block_size # MHA expects standard block size
+            self.input_d = config.n_embd     # MHA expects standard embedding dim
+            self.output_L = self.input_L
+            self.output_d = self.input_d
 
-    def forward(self, x, current_seq_len): # Input x: (B, T, current_d)
+        self.ln_1 = LayerNorm(self.input_d, bias=config.bias) # Use determined input_d
+
+        if self.use_lma:
+            # LMA attention module configured by lma_config
+            self.attn = LatentMetaAttention(config, lma_config)
+            # LN2 and MLP operate on the latent dimension d_new
+            self.ln_2 = LayerNorm(self.output_d, bias=config.bias) # output_d is d_new
+            self.mlp = MLP(config, self.output_d) # MLP input/output is d_new
+            print(f"Initializing Block {id(self)} (LMA): Input ({self.input_L},{self.input_d}) -> Output ({self.output_L},{self.output_d})")
+        else: # MHA Path
+            self.attn = CausalSelfAttention(config) # Assumes config.n_embd matches self.input_d
+            self.ln_2 = LayerNorm(self.input_d, bias=config.bias)
+            self.mlp = MLP(config, self.input_d) # MLP operates on d0
+            print(f"Initializing Block {id(self)} (MHA): Input/Output ({self.input_L},{self.input_d})")
+
+    # --- Block.forward remains the same as previous Option A ---
+    def forward(self, x, current_seq_len): # Input x: (B, T, self.input_d)
+        # Assert input shape matches expected dimensions for this block
+        B, T, C = x.shape
+        # Block assumes input T matches its configured L (self.input_L)
+        if T != self.input_L: raise NotImplementedError(f"Block input T={T} != configured L={self.input_L}")
+        assert C == self.input_d, f"Block input C={C} != configured D={self.input_d}"
+
         x_norm1 = self.ln_1(x)
         if self.use_lma:
-            # Pass T if LMA needs it for masking (though current LMA assumes T=L)
-            z, attn_output = self.attn(x_norm1, current_seq_len) # attn takes (B,L,d0), outputs (B,L_new,d_new)
+            # Pass T if LMA needs it for masking
+            z, attn_output = self.attn(x_norm1, T) # attn takes (B,L,d0), outputs (B,L_new,d_new)
             residual_1_out = z + attn_output # In latent space (B, L_new, d_new)
         else:
             attn_output = self.attn(x_norm1) # (B, T, d0)
@@ -391,7 +406,6 @@ class GPT(nn.Module):
         self.latent_d = current_d # Store final D after blocks
 
         # --- Optional: Initial Transformation Layer ---
-        # If use_lma, apply the transformation *once* before the blocks start
         self.initial_lma_transform = None
         if config.use_lma:
             print("--- Creating Initial LMA Transformation ---")
@@ -400,7 +414,8 @@ class GPT(nn.Module):
             target_d_new_init = config.n_embd // config.lma_reduction_factor
             target_l_new_init = max(1, target_l_new_init)
             target_d_new_init = max(1, target_d_new_init)
-            if config.n_embd % config.n_head != 0: raise ValueError(...) # Check head divisibility
+            if config.n_embd % config.n_head != 0: raise ValueError(f"Initial LMA: n_embd {config.n_embd} not div by n_head {config.n_head}")
+            if target_d_new_init == 0 or config.n_head == 0: raise ValueError(f"Initial LMA: Invalid target_d_new/n_head")
             if target_d_new_init % config.n_head != 0: target_d_new_init = max(config.n_head, (target_d_new_init // config.n_head) * config.n_head)
 
             # Create LMAConfig specifically for this initial transformation
@@ -412,41 +427,43 @@ class GPT(nn.Module):
             # Update dimensions for subsequent blocks
             current_L = initial_lma_cfg.L_new
             current_d = initial_lma_cfg.d_new
-            self.latent_L = current_L
-            self.latent_d = current_d
+            self.latent_L = current_L # Store final latent L
+            self.latent_d = current_d # Store final latent D
             print(f"--- Dimensions after Initial Transform: L={current_L}, D={current_d} ---")
         # ---------------------------------------------
 
         # --- Build Transformer Blocks (Operating in consistent space) ---
         for i in range(config.n_layer):
-            is_lma_block = config.use_lma # Apply LMA to all blocks if enabled
             block_lma_config = None
+            is_lma_block = config.use_lma # Apply LMA to all blocks if enabled
 
             if is_lma_block:
-                # ALL subsequent LMA blocks operate on the *same* latent dimensions
-                # We need an LMAConfig reflecting this: input (d0, L) and latent (d_new, L_new)
-                # are the *same* for these blocks. The LMAConfig needs to hold these latent dims.
+                # LMAConfig for the ATTENTION layer inside the block.
+                # Its d0/L are the latent dimensions it operates on (current_d, current_L).
+                # target_L_new/d_new are also the same, as no further reduction happens.
+                if current_d % config.n_head != 0: raise ValueError(f"Block {i} LMA input d {current_d} not div by n_head {config.n_head}")
+                # Check d_new/n_head_latent divisibility using current_d as d_new
+                if current_d % config.n_head != 0: raise ValueError(f"Block {i} LMA latent d {current_d} not div by latent n_head {config.n_head}")
 
-                # Create LMAConfig for the ATTENTION layer inside the block
-                # Its d0 and L parameters are the latent dimensions from the previous step
-                lma_attention_cfg = LMAConfig(
-                    d0=current_d, L=current_L, # Input to *attention module* is latent space
-                    n_head_stacking=config.n_head, # Stacking uses n_head
-                    target_L_new=current_L,        # Target L_new is current_L (no further reduction)
-                    d_new=current_d,               # Target d_new is current_d
-                    n_head_latent=config.n_head    # Latent attention uses n_head
+                block_lma_config = LMAConfig(
+                    d0=current_d,               # Attention input d
+                    L=current_L,                # Attention input L
+                    n_head_stacking=config.n_head, # Heads used for stacking before THIS block's latent space was formed (use config.n_head)
+                    target_L_new=current_L,     # Target L_new IS current_L
+                    d_new=current_d,            # Target d_new IS current_d
+                    n_head_latent=config.n_head # Latent attention heads
                 )
-                # Create the Block, passing the config for the attention layer
-                # The Block itself takes current_d as input/output dimension
-                block = Block(config, is_lma=True, lma_config=lma_attention_cfg, input_d=current_d)
+                # Instantiate block, passing only config and lma_config
+                # Block __init__ will determine its operating dimensions from lma_config
+                block = Block(config, is_lma=True, lma_config=block_lma_config) # Removed input_L, input_d
             else:
-                # Standard MHA block operates on config.n_embd
-                block = Block(config, is_lma=False, input_d=current_d) # Pass current_d
+                # Standard MHA block
+                block = Block(config, is_lma=False) # Removed input_L, input_d
 
             blocks.append(block)
-            # Dimensions are preserved by MHA block, or LMA block (operating d_new -> d_new)
-            current_L = block.output_L # Should remain constant after initial transform
-            current_d = block.output_d # Should remain constant after initial transform
+            # Get output dimensions FROM the block instance itself
+            current_L = block.output_L
+            current_d = block.output_d
             print(f" Appending Block {i}: Type={'LMA' if is_lma_block else 'MHA'}, Output Shape=({current_L}, {current_d})")
 
         self.transformer['h'] = nn.ModuleList(blocks)
