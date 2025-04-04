@@ -225,7 +225,7 @@ class LatentMetaAttention(nn.Module):
         all_masked_rows = torch.all(attn_scores == float('-inf'), dim=-1)
         
         query_pad_mask_expanded = query_pad_mask.unsqueeze(1).expand(-1, self.n_head_latent, -1, -1) # (B, nH, T_latent, 1)
-        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).view(B * self.n_head_latent, T_latent) # (B*nH, T_latent)
+        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).reshape(B * self.n_head_latent, T_latent)
 
         fully_masked_non_padding = all_masked_rows & (~query_pad_mask_final)
         if torch.any(fully_masked_non_padding):
