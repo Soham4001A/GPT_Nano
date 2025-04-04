@@ -59,8 +59,8 @@ n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 # LMA specific flags (add defaults here if they should be configurable)
-use_lma = False
-lma_reduction_factor = 2
+use_lma = True
+lma_reduction_factor = 3
 # adamw optimizer
 learning_rate = 2e-4 # max learning rate (changed back from 2e-4 based on common baseline)
 max_iters = 600000 # total number of training iterations
@@ -275,7 +275,13 @@ if block_size < model.config.block_size:
 model.to(device) # Move model to device
 
 # ---- Optimizer and Scaler ----
-scaler = torch.amp.GradScaler(device_type=device_type, enabled=(dtype == 'float16')) # Use new API
+# Determine scaler enabled status based on the effective dtype being used
+scaler_enabled = (dtype == 'float16') # Enable scaler only if using float16
+# The GradScaler API doesn't take device_type directly in newer PyTorch versions
+# It infers device from the tensors it scales.
+scaler = torch.amp.GradScaler(enabled=scaler_enabled)
+print(f"Using GradScaler: {scaler_enabled}")
+
 optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
 if init_from == 'resume' and 'optimizer' in checkpoint: # Check if optimizer state exists
     optimizer.load_state_dict(checkpoint['optimizer'])
