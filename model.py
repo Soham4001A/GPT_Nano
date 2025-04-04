@@ -17,7 +17,7 @@ import numpy as np
 # Helper Functions for LMA
 # -----------------------------------------------------------------------------
 
-def find_closest_divisor(total_value, target_divisor, max_delta=20):
+def find_closest_divisor(total_value, target_divisor, max_delta=100):
     """
     Finds a divisor of total_value that is closest to target_divisor (PyTorch/NumPy version).
     """
