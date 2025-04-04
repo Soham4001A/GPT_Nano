@@ -223,9 +223,16 @@ class LatentMetaAttention(nn.Module):
 
         attn_scores = attn_scores.masked_fill(dynamic_mask.unsqueeze(1), float('-inf'))
         all_masked_rows = torch.all(attn_scores == float('-inf'), dim=-1)
-        
+        # Calculate query_pad_mask_final as before
+        query_pad_mask = (query_max_t == -1) # (B, T_latent, 1)
         query_pad_mask_expanded = query_pad_mask.unsqueeze(1).expand(-1, self.n_head_latent, -1, -1) # (B, nH, T_latent, 1)
-        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).reshape(B * self.n_head_latent, T_latent)
+        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).reshape(B * self.n_head_latent, T_latent) # (B*nH, T_latent)
+
+        # --- Add shape prints ---
+        print(f"DEBUG shapes before logical AND:")
+        print(f"  all_masked_rows.shape: {all_masked_rows.shape}")
+        print(f"  query_pad_mask_final.shape: {query_pad_mask_final.shape}")
+        # --- End shape prints ---
 
         fully_masked_non_padding = all_masked_rows & (~query_pad_mask_final)
         if torch.any(fully_masked_non_padding):
