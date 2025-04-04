@@ -317,44 +317,46 @@ if ddp:
 
 # ---- Loss Estimation Function ----
 @torch.no_grad()
-def estimate_loss(model, ctx):
+# Remove ctx from signature
+def estimate_loss(model):
     out = {}
-    model.eval() # Set model to evaluation mode
+    # model should be passed in eval mode
+    model_device = next(model.parameters()).device
+    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
 
-    # Evaluate train/val loss
+    # ---- Determine autocast context INSIDE the function ----
+    # Use the same dtype logic as in the main script training part
+    if device_type == 'cuda':
+        # Use the global 'dtype' variable ('bfloat16' or 'float16')
+        # Ensure 'dtype' variable is accessible here or pass it in if needed
+        global dtype # Access the global dtype setting
+        ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    else: # CPU or MPS
+        eval_ctx = nullcontext()
+    # ---- End context determination ----
+
     for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters, device=device) # Create tensor on correct device
+        losses = torch.zeros(eval_iters, device=model_device) # Use model's device
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            # Ensure ctx is valid
-            if not hasattr(ctx, '__enter__') or not hasattr(ctx, '__exit__'):
-                print(f"Warning: Invalid context manager in estimate_loss for split {split}. Using nullcontext.")
-                current_ctx = nullcontext()
-            else:
-                current_ctx = ctx
-
-            with current_ctx: # Use the passed-in ctx (or fallback)
-                logits, loss = model(X, Y) # Use the passed-in model
-            # Check if loss is valid
-            if loss is not None and not torch.isnan(loss):
-                 losses[k] = loss.item()
-            else:
-                 losses[k] = float('nan') # Record NaN if loss calculation failed
-        # Filter out NaNs before calculating mean
+            # Move batch data explicitly to model's device
+            X, Y = X.to(model_device), Y.to(model_device)
+            with eval_ctx: # Use locally determined context
+                logits, loss = model(X, Y)
+            if loss is not None and not torch.isnan(loss): losses[k] = loss.item()
+            else: losses[k] = float('nan')
         valid_losses = losses[~torch.isnan(losses)]
-        out[split] = valid_losses.mean() if len(valid_losses) > 0 else float('inf') # Return inf if all losses were NaN
+        out[split] = valid_losses.mean() if len(valid_losses) > 0 else float('inf')
 
-    # Evaluate HellaSwag if enabled (only on rank 0)
     if hellaswag and master_process:
-        eval_model = model.module if ddp else model # Use the passed-in model
-        eval_model.eval() # Ensure eval mode for HellaSwag specifically
-        # Pass the ctx explicitly to evaluate_hellaswag
-        hellaswag_acc = evaluate_hellaswag(eval_model, enc, ctx, hellaswag_path)
+        eval_model = model.module if ddp else model
+        # evaluate_hellaswag now determines its own context
+        hellaswag_acc = evaluate_hellaswag(eval_model, enc, hellaswag_path) # Pass path only
         out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0
     elif hellaswag:
          out['hellaswag'] = 0.0
 
-    model.train() # Set model back to training mode
     return out
 # -----------------------------
 
@@ -413,7 +415,7 @@ while True:
         print(f"DEBUG: Type of ctx BEFORE calling estimate_loss: {type(ctx)}")
         print(f"DEBUG: Does ctx have __enter__? {'__enter__' in dir(ctx)}")
         # --- End Debug Print ---
-        losses = estimate_loss(model, ctx) # <-- PASS model and ctx
+        losses = estimate_loss(model)
         model.train() # Set back to train mode after evaluation
         print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
         if hellaswag: print_str += f", HellaSwag Acc: {losses.get('hellaswag', -1):.4f}"

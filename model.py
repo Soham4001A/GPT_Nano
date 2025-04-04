@@ -1077,29 +1077,27 @@ def get_most_likely_row(tokens, mask, logits):
     return pred_norm
 
 @torch.no_grad()
-def evaluate_hellaswag(model, enc, ctx, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
-    """ Runs HellaSwag evaluation and returns accuracy """
-    import json
-    import tqdm
-    import os # For path joining
-    from tiktoken.core import Encoding # For type hint
-
+# Remove ctx from signature, hellaswag_path has a default
+def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+    """
+    Runs HellaSwag evaluation and returns accuracy.
+    Determines its own autocast context based on the model's device.
+    Defaults to float32 context for evaluation stability.
+    """
     assert isinstance(enc, Encoding), "Encoder `enc` must be a tiktoken Encoding object"
-
     print(f"Evaluating HellaSwag from {hellaswag_path}...")
     num_correct_norm = 0
     num_total = 0
-    
-    # Ensure path exists
+
+    # --- File Check/Download Logic ---
     if not os.path.exists(hellaswag_path):
         print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
-        # Attempt to download if using standard nanoGPT structure
         data_dir = os.path.dirname(hellaswag_path)
         if not os.path.exists(data_dir): os.makedirs(data_dir)
         val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
         print(f"Attempting to download from {val_url}...")
         try:
-            import requests
+            import requests # Local import
             with requests.get(val_url, stream=True) as r:
                 r.raise_for_status()
                 with open(hellaswag_path, 'wb') as f:
@@ -1109,22 +1107,31 @@ def evaluate_hellaswag(model, enc, ctx, hellaswag_path='data/hellaswag/hellaswag
         except Exception as e:
             print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
             return -1.0 # Indicate error
+    # --- End File Check ---
 
-    # Determine device of the model
+    # Determine device and evaluation context INSIDE the function
     model_device = next(model.parameters()).device
+    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+
+    eval_ctx = nullcontext() # Default context
+    if device_type == 'cuda':
+        # Use float32 for evaluation by default for stability
+        print("DEBUG: Using torch.float32 context for HellaSwag model call.")
+        eval_dtype = torch.float32
+        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=eval_dtype)
+    # --- End Context Determination ---
 
     try:
         with open(hellaswag_path, 'r') as f:
-            for line in tqdm.tqdm(f, desc="HellaSwag Eval"): # Use tqdm for progress bar
+            for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
                 example = json.loads(line)
                 num_total += 1
                 ctx = example['ctx']
-                label = example['label'] # Integer index of correct ending
-                endings = example['endings'] # List of 4 ending strings
+                label = example['label']
+                endings = example['endings']
 
-                # Encode context and each ending
                 ctx_tokens = enc.encode(ctx)
-                if not ctx_tokens: # Handle empty context (rare)
+                if not ctx_tokens:
                     print(f"Warning: Skipping example with empty context: {example.get('activity_label', 'N/A')}")
                     num_total -=1
                     continue
@@ -1134,95 +1141,102 @@ def evaluate_hellaswag(model, enc, ctx, hellaswag_path='data/hellaswag/hellaswag
 
                 for end in endings:
                     completion_tokens = enc.encode(end)
-                    # Combine context and completion
                     tok = ctx_tokens + completion_tokens
-                    mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens) # Evaluate loss only on completion
+                    mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
 
-                    # Truncate to model's block size *from the left*
+                    # Truncate to model's block size from the left
                     if len(tok) > model.config.block_size:
-                        # Ensure we don't remove the entire completion if ctx is very long
                         num_completion_tokens = len(completion_tokens)
                         max_ctx_len = model.config.block_size - num_completion_tokens
                         if max_ctx_len < 0:
-                             # Completion itself is longer than block size, truncate completion
-                             print(f"Warning: Completion longer than block size ({num_completion_tokens} > {model.config.block_size}). Truncating completion.")
-                             completion_tokens = completion_tokens[:model.config.block_size] # Take first part of completion
-                             tok = completion_tokens # Use only truncated completion
-                             mask = [1] * len(tok) # Mask is all 1s
-                             max_ctx_len=0 # No context left
+                             # print(f"Warning: Completion longer than block size ({num_completion_tokens} > {model.config.block_size}). Truncating.") # Reduce noise
+                             completion_tokens = completion_tokens[:model.config.block_size]
+                             tok = completion_tokens
+                             mask = [1] * len(tok)
+                             max_ctx_len=0
 
-                        # Truncate context if needed
                         start_index = max(0, len(ctx_tokens) - max_ctx_len)
                         truncated_ctx_tokens = ctx_tokens[start_index:]
-
-                        # Rebuild truncated sequence and mask
                         tok = truncated_ctx_tokens + completion_tokens
                         mask = [0]*len(truncated_ctx_tokens) + [1]*len(completion_tokens)
 
-                        # Final check on length
                         if len(tok) > model.config.block_size:
-                             # This can happen if completion was also truncated but combo still too long?
-                             # Should be rare after previous check. Truncate combined sequence.
-                             print(f"Warning: Final truncation needed for combined sequence (len={len(tok)}).")
+                             # print(f"Warning: Final truncation needed (len={len(tok)}).") # Reduce noise
                              tok = tok[-model.config.block_size:]
                              mask = mask[-model.config.block_size:]
+
+                    # Handle case where tok might become length 1 after truncation
+                    if len(tok) <= 1:
+                         print(f"Warning: Skipping ending due to token length <= 1 after processing. Ending: '{end[:50]}...'")
+                         # Append placeholder tensors to maintain batch size of 4
+                         # Need to know max_len later, so can't skip entirely easily.
+                         # Pad to a minimum length? Or handle in get_most_likely_row?
+                         # Let's pad to length 2 for now to avoid errors downstream.
+                         tok = tok + [0] * (2 - len(tok)) # Pad with 0 token index
+                         mask = mask + [0] * (2 - len(mask))
+                         # Ensure length doesn't exceed block size if it started > 1
+                         tok = tok[:model.config.block_size]
+                         mask = mask[:model.config.block_size]
 
 
                     tok_rows.append(torch.tensor(tok, dtype=torch.long))
                     mask_rows.append(torch.tensor(mask, dtype=torch.long))
 
-                # Batch the rows for efficiency
-                # Find max length *in this batch of 4*
+                # Pad batch to max length
+                # Check if tok_rows is empty (shouldn't happen with padding above)
+                if not tok_rows: continue # Skip example if all endings were invalid
+
                 max_len = max(len(row) for row in tok_rows)
+                # Ensure max_len is at least 2 to prevent errors in shift_logits/tokens
+                if max_len <= 1:
+                    print(f"Warning: max_len <= 1 for HellaSwag example. Forcing max_len=2.")
+                    max_len = 2
+
                 tokens = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
                 mask = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
                 for i, (tok_row, mask_row) in enumerate(zip(tok_rows, mask_rows)):
-                    # Pad each row to max_len
-                    tokens[i, :len(tok_row)] = tok_row
-                    mask[i, :len(mask_row)] = mask_row
+                    current_len = len(tok_row)
+                    tokens[i, :current_len] = tok_row
+                    mask[i, :current_len] = mask_row
 
                 # Move batch to model's device
                 tokens = tokens.to(model_device)
                 mask = mask.to(model_device)
 
-                # Get the logits from the model
+                # Get logits from the model using the determined context
                 model.eval()
-                # Ensure ctx is a valid context manager before using
-                if not hasattr(ctx, '__enter__') or not hasattr(ctx, '__exit__'):
-                    print("Warning: Invalid context manager passed to evaluate_hellaswag. Using nullcontext.")
-                    ctx = nullcontext() # Fallback safely
+                with eval_ctx:
+                    logits, _ = model(tokens) # logits shape (4, max_len, V)
 
-                with ctx: # Use the passed-in ctx
-                    logits, _ = model(tokens)
-
+                # Check for NaNs/Infs in logits
                 if torch.isnan(logits).any() or torch.isinf(logits).any():
                     print(f"ERROR: NaNs or Infs detected in logits during HellaSwag eval!")
-                    # Optionally print the problematic input 'tokens' here
-                    # print(f"Problematic tokens (first 10): {tokens[:, :10]}")
-                    # Skip this example or return an error metric
-                    # For now, let's skip the row calculation for this example
-                    print(f"Skipping HellaSwag example due to NaN/Inf logits.")
-                    # How to handle skipping? We can't just continue, need to finish the loop.
-                    # Assign a default prediction that's likely wrong?
-                    pred_norm = 0 # Or some other default incorrect label index
-                    # Or maybe raise an exception? Let's try assigning a default first.
-                    # Need to adjust num_total? No, better to just get it wrong.
+                    # Assign a default prediction if logits are invalid
+                    pred_norm = 0 # Or label % 4 to cycle? Let's use 0.
                 else:
-                    # Only calculate row if logits are valid
-                    pred_norm = get_most_likely_row(tokens, mask, logits)
+                    # Only calculate if logits are valid
+                    try:
+                        pred_norm = get_most_likely_row(tokens, mask, logits)
+                    except ValueError as e:
+                         # Catch potential errors from get_most_likely_row itself
+                         print(f"ERROR during get_most_likely_row: {e}")
+                         print(f"  Logits shape: {logits.shape}, Tokens shape: {tokens.shape}")
+                         import traceback; traceback.print_exc()
+                         pred_norm = 0 # Default prediction on error
 
                 # Check if prediction matches label
                 if pred_norm == label:
                     num_correct_norm += 1
 
-    except FileNotFoundError: # Already handled by check/download above, but keep for safety
+    except FileNotFoundError: # Should be handled by check above
         print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
-        return -1.0 # Indicate error
+        return -1.0
     except Exception as e:
-        print(f"Error during HellaSwag evaluation: {e}")
+        print(f"Error during HellaSwag evaluation loop: {e}")
         import traceback; traceback.print_exc()
         return -1.0 # Indicate error
 
+    # Final accuracy calculation
     acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0
     print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})")
     return acc_norm
