@@ -2,6 +2,8 @@
 This training script can be run both on a single gpu in debug mode,
 and also in a larger training run with distributed data parallel (ddp).
 
+Includes optional HellaSwag evaluation.
+
 To run on a single GPU, example:
 $ python train.py --batch_size=32 --compile=False
 
@@ -21,13 +23,15 @@ import time
 import math
 import pickle
 from contextlib import nullcontext
+import tiktoken # <--- IMPORT TIKTOKEN
 
 import numpy as np
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
-from model import GPTConfig, GPT
+# Assuming model.py contains GPTConfig, GPT, and evaluate_hellaswag
+from model import GPTConfig, GPT, evaluate_hellaswag # <--- IMPORT evaluate_hellaswag
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -54,8 +58,11 @@ n_head = 12
 n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
+# LMA specific flags (add defaults here if they should be configurable)
+use_lma = False
+lma_reduction_factor = 2
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
+learning_rate = 6e-4 # max learning rate (changed back from 2e-4 based on common baseline)
 max_iters = 600000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
@@ -66,111 +73,136 @@ decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+# DDP settings
+backend = 'nccl' # Default backend, will be adjusted based on device
+# system
+# --- Determine device and backend ---
 if torch.cuda.is_available():
     device = 'cuda'
-    backend = 'nccl' # Use NCCL if CUDA is available and PyTorch supports it
-elif torch.backends.mps.is_available():
+    backend = 'nccl' # NCCL is generally preferred for CUDA DDP
+elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
     device = 'mps'
-    backend = 'gloo' # Gloo is often used for CPU/MPS, check if needed for MPS DDP
+    # Check if DDP is active later, and force CPU if DDP+MPS
+    backend = 'gloo' # Gloo *might* work, but often CPU fallback needed
     print("WARNING: Using MPS device. DDP support might be limited or experimental.")
 else:
     device = 'cpu'
     backend = 'gloo' # Use Gloo for CPU distributed training
+# --- End device/backend determination ---
 
-dtype = 'bfloat16' if device == 'cuda' and torch.cuda.is_bf16_supported() else 'float16'
-# Disable compile on MPS for now, might have issues
-# compile = True if device == 'cuda' else False # Original compile logic
-compile = False # Disable torch.compile initially for easier debugging across devices
+# Dtype and Autocast setup
+dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # Use float16 by default if no bfloat16 support
+compile = False # Disable torch.compile initially for broader compatibility/debugging
+
+# --- HellaSwag ---
+hellaswag = False # Default to False, override with config file or cmd line
+hellaswag_path = 'data/hellaswag/hellaswag_val.jsonl' # Default path
+
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
-# various inits, derived attributes, I/O setup
+# ----- DDP and Device Setup -----
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
 if ddp:
-    # Check backend compatibility BEFORE init_process_group
-    if backend == 'nccl' and not torch.cuda.is_available():
+    # Check/adjust backend based on final device choice (esp. MPS)
+    if device == 'mps':
+        print("Warning: DDP requested with MPS device. Forcing CPU backend/device due to compatibility issues.")
+        device = 'cpu'    # Force CPU for DDP if MPS was initially detected
+        backend = 'gloo'  # Ensure Gloo backend for CPU DDP
+    elif backend == 'nccl' and not torch.cuda.is_available():
         print("Warning: NCCL backend specified but CUDA not available. Switching to Gloo.")
         backend = 'gloo'
-    elif backend == 'nccl' and device == 'mps':
-        print("Warning: NCCL backend not supported on MPS. Switching to Gloo.")
-        backend = 'gloo' # Or potentially skip DDP if Gloo isn't intended for MPS DDP
 
-    init_process_group(backend=backend) # Use the potentially adjusted backend
+    # Initialize process group
+    init_process_group(backend=backend)
     ddp_rank = int(os.environ['RANK'])
     ddp_local_rank = int(os.environ['LOCAL_RANK'])
     ddp_world_size = int(os.environ['WORLD_SIZE'])
-    if device == 'cuda': # Set device only if using CUDA
+    # Assign device based on local rank only if using CUDA
+    if device == 'cuda':
         device = f'cuda:{ddp_local_rank}'
         torch.cuda.set_device(device)
-    # If using MPS/CPU in DDP, device is already set globally, no local rank needed for device ID
-    master_process = ddp_rank == 0
-    seed_offset = ddp_rank
+    # For CPU DDP, 'device' remains 'cpu'
+    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
+    seed_offset = ddp_rank # each process gets a different seed
+    # world_size number of processes will be training simultaneously, so we can scale
+    # down the desired gradient accumulation iterations per process proportionally
     assert gradient_accumulation_steps % ddp_world_size == 0
     gradient_accumulation_steps //= ddp_world_size
 else:
-    # Non-DDP run, device is determined above
+    # if not ddp, we are running on a single gpu, and one process
     master_process = True
     seed_offset = 0
     ddp_world_size = 1
+# ------------------------------------
+
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
-print(f"Using device: {device}, Backend: {backend if ddp else 'N/A'}") # Log device/backend
+print(f"Using device: {device}, Backend: {backend if ddp else 'N/A'}") # Log final device/backend
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-if 'cuda' in device:
-    device_type = 'cuda'
-elif 'mps' in device:
-    device_type = 'mps'
-    print("Warning: MPS device type detected, Torch Autocast might behave differently.")
-    # MPS might not fully support bfloat16/float16 autocast like CUDA
-    # Let's default to float32 on MPS for stability initially
-    ptdtype = torch.float32
-    dtype = 'float32' # Override dtype
-    ctx = nullcontext() # Disable autocast for MPS initially
-    print("Overriding dtype to float32 and disabling Autocast for MPS device.")
-else:
-    device_type = 'cpu'
-    ptdtype = torch.float32 # CPU uses float32
-    dtype = 'float32'
-    ctx = nullcontext() # No autocast needed/supported for CPU
+# Determine device type string and PyTorch dtype
+if 'cuda' in device: device_type = 'cuda'
+elif 'mps' in device: device_type = 'mps'
+else: device_type = 'cpu'
 
-# Re-check ptdtype based on potentially overridden dtype
-if device_type != 'mps': # Re-evaluate ptdype unless it was forced to float32 for MPS
+# Adjust dtype and autocast context based on final device_type
+if device_type == 'cuda':
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-# Update context manager based on final device_type and ptdtype
-ctx = nullcontext() if device_type in ['cpu', 'mps'] else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+else: # CPU or MPS
+    ptdtype = torch.float32
+    dtype = 'float32' # Force float32 for CPU/MPS
+    ctx = nullcontext()
+    if device_type == 'mps': print("Using float32 on MPS device, disabling Autocast.")
 
-# poor man's data loader
+print(f"Using PyTorch dtype: {ptdtype}")
+
+# ---- Data Loader ----
 data_dir = os.path.join('data', dataset)
+train_data_path = os.path.join(data_dir, 'train.bin')
+val_data_path = os.path.join(data_dir, 'val.bin')
+# Check if data files exist
+if not os.path.exists(train_data_path) or not os.path.exists(val_data_path):
+    print("\nERROR: Training data (.bin files) not found.")
+    print(f"Expected locations: {train_data_path}, {val_data_path}")
+    print(f"Please ensure the '{dataset}' dataset is prepared correctly in the '{data_dir}' directory.")
+    print("You may need to run the data preparation script (e.g., prepare.py for openwebtext).")
+    exit(1) # Exit if data is missing
+
 def get_batch(split):
-    # We recreate np.memmap every batch to avoid a memory leak, as per
-    # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
-    if split == 'train':
-        data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
-    else:
-        data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
+    data_path = train_data_path if split == 'train' else val_data_path
+    data = np.memmap(data_path, dtype=np.uint16, mode='r')
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
     y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    if device_type == 'cuda':
-        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
-        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
-    else:
-        x, y = x.to(device), y.to(device)
+    # Move data to the correct device
+    x, y = x.to(device), y.to(device)
+    # Pin memory only if using CUDA DDP? Check if beneficial otherwise.
+    # if device_type == 'cuda':
+    #     x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+    # else:
+    #     x, y = x.to(device), y.to(device) # Simple move for CPU/MPS
     return x, y
+# --------------------
+
+# ---- Tokenizer for HellaSwag ----
+# NOTE: Requires tiktoken (`pip install tiktoken`)
+enc = tiktoken.get_encoding("gpt2")
+# ---------------------------------
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
 best_val_loss = 1e9
 
-# attempt to derive vocab_size from the dataset
+# attempt to derive vocab_size from the dataset meta file
 meta_path = os.path.join(data_dir, 'meta.pkl')
 meta_vocab_size = None
 if os.path.exists(meta_path):
@@ -179,194 +211,250 @@ if os.path.exists(meta_path):
     meta_vocab_size = meta['vocab_size']
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
-# model init
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size, use_lma = True,
-                  bias=bias, vocab_size=None, dropout=dropout, lma_reduction_factor = 3) # start with model_args from command line
+# ---- Model Initialization ----
+model_args = dict(
+    n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+    bias=bias, vocab_size=None, dropout=dropout,
+    use_lma=use_lma, # Pass LMA flag
+    lma_reduction_factor=lma_reduction_factor # Pass reduction factor
+)
 if init_from == 'scratch':
-    # init a new model from scratch
     print("Initializing a new model from scratch")
-    # determine the vocab size we'll use for from-scratch training
-    if meta_vocab_size is None:
-        print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
     model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
-    # resume training from a checkpoint.
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
     checkpoint = torch.load(ckpt_path, map_location=device)
     checkpoint_model_args = checkpoint['model_args']
-    # force these config attributes to be equal otherwise we can't even resume training
-    # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = checkpoint_model_args[k]
-    # create the model
+    # Ensure crucial args match, others can be overridden
+    forced_keys = ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'use_lma'] # Added use_lma
+    for k in forced_keys:
+        # Check if key exists in checkpoint_model_args before assigning
+        if k in checkpoint_model_args:
+             model_args[k] = checkpoint_model_args[k]
+        else:
+             print(f"Warning: Checkpoint missing arg '{k}'. Using default/cmd line value: {model_args.get(k)}")
+             # If loading a non-LMA checkpoint into LMA config or vice-versa, need careful handling
+             if k == 'use_lma' and model_args.get(k) != checkpoint_model_args.get(k, False): # Default checkpoint LMA to False if missing
+                  raise ValueError("Checkpoint/Config mismatch for 'use_lma'. Cannot resume.")
+
+    # Include LMA specific args if resuming an LMA model
+    if model_args.get('use_lma', False):
+         # Check if reduction factor exists in checkpoint args, otherwise use current config
+         model_args['lma_reduction_factor'] = checkpoint_model_args.get('lma_reduction_factor', lma_reduction_factor)
+
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
     state_dict = checkpoint['model']
-    # fix the keys of the state dictionary :(
-    # honestly no idea how checkpoints sometimes get this prefix, have to debug more
     unwanted_prefix = '_orig_mod.'
     for k,v in list(state_dict.items()):
-        if k.startswith(unwanted_prefix):
-            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+        if k.startswith(unwanted_prefix): state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
     iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_val_loss']
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
-    # initialize from OpenAI GPT-2 weights
+    # Cannot use LMA with pretrained weights
+    if use_lma: raise ValueError("Cannot initialize LMA model from standard GPT-2 weights.")
     override_args = dict(dropout=dropout)
     model = GPT.from_pretrained(init_from, override_args)
-    # read off the created config params, so we can store them into checkpoint correctly
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
         model_args[k] = getattr(model.config, k)
-# crop down the model block size if desired, using model surgery
+# --------------------------
+
+# Crop block size if needed (must happen AFTER model init)
 if block_size < model.config.block_size:
-    model.crop_block_size(block_size)
-    model_args['block_size'] = block_size # so that the checkpoint will have the right value
-model.to(device)
+    try:
+        model.crop_block_size(block_size)
+        model_args['block_size'] = block_size # Update configuration
+    except NotImplementedError as e:
+        print(f"Warning: Could not crop block size - {e}")
 
-# initialize a GradScaler. If enabled=False scaler is a no-op
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+model.to(device) # Move model to device
 
-# optimizer
+# ---- Optimizer and Scaler ----
+scaler = torch.amp.GradScaler(device_type=device_type, enabled=(dtype == 'float16')) # Use new API
 optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
-if init_from == 'resume':
+if init_from == 'resume' and 'optimizer' in checkpoint: # Check if optimizer state exists
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
+# -----------------------------
 
-# compile the model
+# ---- Compile Model (Optional) ----
 if compile:
-    print("compiling the model... (takes a ~minute)")
-    unoptimized_model = model
-    model = torch.compile(model) # requires PyTorch 2.0
+    # Check if device supports compile, disable if not (e.g., MPS)
+    if device_type not in ['cuda']: # Add other supported types if needed
+         print(f"Warning: Disabling torch.compile as it's not fully supported on device '{device_type}'.")
+         compile = False
+    else:
+         print("compiling the model... (takes a ~minute)")
+         unoptimized_model = model
+         try:
+             model = torch.compile(model) # requires PyTorch 2.0
+         except Exception as e:
+             print(f"Warning: Model compilation failed: {e}. Proceeding without compilation.")
+             compile = False # Fallback if compilation fails
+             model = unoptimized_model # Use the original model
+# -------------------------------
 
-# wrap model into DDP container
+# ---- Wrap model in DDP ----
 if ddp:
-    model = DDP(model, device_ids=[ddp_local_rank])
+    # Check for MPS incompatibility again before wrapping
+    if device_type == 'mps':
+         print("ERROR: Cannot use DDP with MPS device due to backend limitations.")
+         # Consider exiting or forcing CPU if DDP is critical
+         exit(1) # Exit if DDP+MPS requested
+    model = DDP(model, device_ids=[ddp_local_rank] if device_type == 'cuda' else None) # Only specify device_ids for CUDA
+# --------------------------
 
-# helps estimate an arbitrarily accurate loss over either split using many batches
+# ---- Loss Estimation Function ----
 @torch.no_grad()
 def estimate_loss():
     out = {}
-    model.eval()
+    model.eval() # Set model to evaluation mode
+
+    # Evaluate train/val loss
     for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
+        losses = torch.zeros(eval_iters, device=device) # Create tensor on correct device
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            with ctx:
+            with ctx: # Use autocast context
                 logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
-    model.train()
+            # Check if loss is valid
+            if loss is not None and not torch.isnan(loss):
+                 losses[k] = loss.item()
+            else:
+                 losses[k] = float('nan') # Record NaN if loss calculation failed
+        # Filter out NaNs before calculating mean
+        valid_losses = losses[~torch.isnan(losses)]
+        out[split] = valid_losses.mean() if len(valid_losses) > 0 else float('inf') # Return inf if all losses were NaN
+
+    # Evaluate HellaSwag if enabled (only on rank 0)
+    if hellaswag and master_process:
+        # Ensure model is on the evaluation device (could be different in DDP)
+        eval_model = model.module if ddp else model
+        # Ensure model is in eval mode (already set)
+        # Move model to CPU for tiktoken if necessary? No, eval_model.to(device) is done before loop
+        hellaswag_acc = evaluate_hellaswag(eval_model, enc, hellaswag_path) # Pass path
+        out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0 # Handle potential errors from eval
+    elif hellaswag: # For non-master processes in DDP
+         out['hellaswag'] = 0.0 # Placeholder, not used for logging
+
+    model.train() # Set model back to training mode
     return out
+# -----------------------------
 
-# learning rate decay scheduler (cosine with warmup)
+# ---- LR Scheduler ----
 def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
-        return learning_rate * (it + 1) / (warmup_iters + 1)
-    # 2) if it > lr_decay_iters, return min learning rate
-    if it > lr_decay_iters:
-        return min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
-    return min_lr + coeff * (learning_rate - min_lr)
+    if not decay_lr: return learning_rate # Return fixed LR if decay is off
+    if it < warmup_iters: return learning_rate * (it + 1) / (warmup_iters + 1)
+    if it > lr_decay_iters: return min_lr
+    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters); assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)); return min_lr + coeff * (learning_rate - min_lr)
+# --------------------
 
-# logging
+# ---- Logging Setup ----
 if wandb_log and master_process:
     import wandb
-    wandb.init(project=wandb_project, name=wandb_run_name, config=config)
+    # Ensure config passed to wandb includes LMA settings if used
+    run_config = config.copy()
+    if use_lma: # Check the global flag from config
+         # Try to get LMA specifics from model config if available
+         if hasattr(model.module if ddp else model, 'config') and hasattr(model.module if ddp else model, 'lma_config_internal'):
+              # This assumes GPT stores the initial LMAConfig as 'lma_config_internal'
+              # If not, get from the first block's lma_config
+              try:
+                   first_block = (model.module if ddp else model).transformer.h[0]
+                   if hasattr(first_block, 'attn') and hasattr(first_block.attn, 'lma_config'):
+                        lma_conf_instance = first_block.attn.lma_config
+                        run_config.update({f"lma_{k}": v for k, v in lma_conf_instance.__dict__.items() if not k.startswith('_')})
+              except Exception as e:
+                   print(f"Warning: Could not retrieve detailed LMA config for wandb: {e}")
+         else: # Fallback using global config values
+              run_config['use_lma'] = use_lma
+              run_config['lma_reduction_factor'] = lma_reduction_factor
+              run_config['lma_L_new'] = 'N/A' # Placeholder, actual L_new is dynamic/adjusted
+              run_config['lma_d_new'] = 'N/A' # Placeholder
+    wandb.init(project=wandb_project, name=wandb_run_name, config=run_config)
+# -----------------------
 
-# training loop
-X, Y = get_batch('train') # fetch the very first batch
+# ---- Training Loop ----
+X, Y = get_batch('train') # Fetch first batch
 t0 = time.time()
-local_iter_num = 0 # number of iterations in the lifetime of this process
-raw_model = model.module if ddp else model # unwrap DDP container if needed
+local_iter_num = 0
+raw_model = model.module if ddp else model # unwrap DDP
 running_mfu = -1.0
+print("\nStarting training loop...")
 while True:
 
-    # determine and set the learning rate for this iteration
+    # Determine and set LR
     lr = get_lr(iter_num) if decay_lr else learning_rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    for param_group in optimizer.param_groups: param_group['lr'] = lr
 
-    # evaluate the loss on train/val sets and write checkpoints
+    # Evaluate loss and save checkpoints
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
-        print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
+        if hellaswag: print_str += f", HellaSwag Acc: {losses.get('hellaswag', -1):.4f}"
+        print(print_str)
+
         if wandb_log:
-            wandb.log({
-                "iter": iter_num,
-                "train/loss": losses['train'],
-                "val/loss": losses['val'],
-                "lr": lr,
-                "mfu": running_mfu*100, # convert to percentage
-            })
-        if losses['val'] < best_val_loss or always_save_checkpoint:
-            best_val_loss = losses['val']
+            log_data = { "iter": iter_num, "train/loss": losses.get('train', float('nan')), "val/loss": losses.get('val', float('nan')), "lr": lr, "mfu": running_mfu*100 }
+            if hellaswag and 'hellaswag' in losses: log_data['val/hellaswag_acc'] = losses['hellaswag']
+            wandb.log(log_data)
+
+        current_val_loss = losses.get('val', float('inf')) # Handle case where val loss might be NaN/missing
+        if current_val_loss < best_val_loss or always_save_checkpoint:
+            best_val_loss = current_val_loss if current_val_loss != float('inf') else best_val_loss # Only update if valid
             if iter_num > 0:
-                checkpoint = {
-                    'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
-                    'iter_num': iter_num,
-                    'best_val_loss': best_val_loss,
-                    'config': config,
-                }
+                checkpoint = { 'model': raw_model.state_dict(), 'optimizer': optimizer.state_dict(), 'model_args': model_args, 'iter_num': iter_num, 'best_val_loss': best_val_loss, 'config': config }
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
-    if iter_num == 0 and eval_only:
-        break
+    if iter_num == 0 and eval_only: break
 
-    # forward backward update, with optional gradient accumulation to simulate larger batch size
-    # and using the GradScaler if data type is float16
+    # Forward backward update with gradient accumulation
     for micro_step in range(gradient_accumulation_steps):
-        if ddp:
-            # in DDP training we only need to sync gradients at the last micro step.
-            # the official way to do this is with model.no_sync() context manager, but
-            # I really dislike that this bloats the code and forces us to repeat code
-            # looking at the source of that context manager, it just toggles this variable
-            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+        if ddp: model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
             logits, loss = model(X, Y)
-            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-        # immediately async prefetch next batch while model is doing the forward pass on the GPU
+            # Check for NaN loss immediately
+            if torch.isnan(loss):
+                 print(f"ERROR: Loss is NaN at iter {iter_num}, micro_step {micro_step}. Stopping.")
+                 exit(1) # Stop training if loss becomes NaN
+            loss = loss / gradient_accumulation_steps # Scale loss
+        # Prefetch next batch
         X, Y = get_batch('train')
-        # backward pass, with gradient scaling if training in fp16
-        scaler.scale(loss).backward()
-    # clip the gradient
+        # Backward pass
+        scaler.scale(loss).backward() # Use scaler for backward
+
+    # Gradient Clipping
     if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
+        scaler.unscale_(optimizer) # Unscale before clipping
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    # step the optimizer and scaler if training in fp16
+
+    # Optimizer Step
     scaler.step(optimizer)
     scaler.update()
-    # flush the gradients as soon as we can, no need for this memory anymore
     optimizer.zero_grad(set_to_none=True)
 
-    # timing and logging
-    t1 = time.time()
-    dt = t1 - t0
-    t0 = t1
+    # Timing and Logging
+    t1 = time.time(); dt = t1 - t0; t0 = t1
     if iter_num % log_interval == 0 and master_process:
-        # get loss as float. note: this is a CPU-GPU sync point
-        # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
-        lossf = loss.item() * gradient_accumulation_steps
-        if local_iter_num >= 5: # let the training loop settle a bit
+        lossf = loss.item() * gradient_accumulation_steps # Approx total loss
+        if local_iter_num >= 5: # MFU warmup
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-    iter_num += 1
-    local_iter_num += 1
 
-    # termination conditions
-    if iter_num > max_iters:
-        break
+    iter_num += 1; local_iter_num += 1
+    if iter_num > max_iters: break
+# ---------------------
 
+# ---- Cleanup ----
 if ddp:
     destroy_process_group()
+# ---------------
+
+print("Training finished.")

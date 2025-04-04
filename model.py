@@ -576,6 +576,125 @@ class GPT(nn.Module):
 
         return logits, loss
 
+# HellaSwag evaluation logic based on https://github.com/rowanz/hellaswag
+
+def get_most_likely_row(tokens, mask, logits):
+    # Evaluate the autoregressive loss at all positions
+    shift_logits = (logits[..., :-1, :]).contiguous()
+    shift_tokens = (tokens[..., 1:]).contiguous()
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1))
+    flat_shift_tokens = shift_tokens.view(-1)
+    shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
+    shift_losses = shift_losses.view(tokens.size(0), -1)
+    # Now get the average loss just for the completion region (where mask == 1)
+    shift_mask = (mask[..., 1:]).contiguous() # Where mask == 1 denotes regions to be evaluated
+    masked_shift_losses = shift_losses * shift_mask
+    # Sum and divide by the number of loss tokens (prevent division by zero)
+    sum_loss = masked_shift_losses.sum(dim=1)
+    avg_loss = sum_loss / (shift_mask.sum(dim=1) + 1e-5) # Add epsilon for stability
+    # Now find the choice with the minimal loss
+    pred_norm = avg_loss.argmin().item()
+    return pred_norm
+
+@torch.no_grad()
+def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+    """ Runs HellaSwag evaluation and returns accuracy """
+    import json # Import locally to avoid top-level dependency if not always used
+    import tqdm
+    print(f"Evaluating HellaSwag from {hellaswag_path}...")
+    num_correct_norm = 0
+    num_total = 0
+
+    try:
+        with open(hellaswag_path, 'r') as f:
+            for line in tqdm.tqdm(f): # Use tqdm for progress bar
+                example = json.loads(line)
+                num_total += 1
+                ctx = example['ctx']
+                label = example['label']
+                endings = example['endings']
+
+                # Encode the context the label and the completion combined --> computing likelihood of completion
+                ctx_tokens = enc.encode(ctx)
+                tok_rows = []
+                mask_rows = []
+                # Check if ctx_tokens is empty, skip if so
+                if not ctx_tokens:
+                     print(f"Warning: Empty context tokens for example: {example.get('activity_label', 'N/A')}")
+                     num_total -= 1 # Decrement total as we skip this invalid example
+                     continue
+
+                for end in endings:
+                    completion_tokens = enc.encode(end)
+                    # Check if completion_tokens is empty
+                    if not completion_tokens:
+                        print(f"Warning: Empty completion tokens for ending: '{end}' in example: {example.get('activity_label', 'N/A')}")
+                        # Assign a very high loss (low probability) to this invalid ending
+                        # Or handle differently? Assigning high loss is one way.
+                        # For now, let's skip this ending if it's problematic for accuracy calc
+                        # This requires adjusting how num_correct/num_total is handled maybe?
+                        # Simplest: Just treat it as a wrong prediction implicitly if label points here.
+                        tok = ctx_tokens[:] # Use context only
+                        mask = [0] * len(tok) # Mask is all zeros
+                    else:
+                        tok = ctx_tokens + completion_tokens
+                        mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens) # Evaluate only the completion tokens
+
+                    # Truncate to block size if necessary
+                    if len(tok) > model.config.block_size:
+                        # Try truncating from the left, keeping the ending
+                        tok = tok[-model.config.block_size:]
+                        mask = mask[-model.config.block_size:]
+                        # Ensure context is not completely removed if possible
+                        if sum(mask) == len(mask): # Only ending left, invalid state
+                            print(f"Warning: Truncation removed all context for ending '{end}'. Skipping ending.")
+                            tok = [0] * model.config.block_size # Pad?
+                            mask = [0] * model.config.block_size
+
+
+                    tok_rows.append(torch.tensor(tok, dtype=torch.long))
+                    mask_rows.append(torch.tensor(mask, dtype=torch.long))
+
+                # Check if tok_rows became empty (e.g., all endings were invalid/empty)
+                if not tok_rows:
+                    print(f"Warning: No valid endings processed for example: {example.get('activity_label', 'N/A')}")
+                    num_total -= 1 # Don't count this example
+                    continue
+
+                # Batch the rows for efficiency
+                max_len = max(len(row) for row in tok_rows)
+                tokens = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
+                mask = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
+                for i, (tok_row, mask_row) in enumerate(zip(tok_rows, mask_rows)):
+                    tokens[i, :len(tok_row)] = tok_row
+                    mask[i, :len(mask_row)] = mask_row
+
+                tokens = tokens.to(next(model.parameters()).device) # Move to model's device
+                mask = mask.to(tokens.device)
+
+                # Get the logits
+                with torch.no_grad(): # Ensure no gradients are computed
+                    # Assume model.forward is the primary way to get logits
+                    logits, _ = model(tokens) # Don't need loss here
+                    pred_norm = get_most_likely_row(tokens, mask, logits)
+
+                # Check if prediction matches label
+                if pred_norm == label:
+                    num_correct_norm += 1
+
+    except FileNotFoundError:
+        print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
+        return -1.0 # Indicate error
+    except Exception as e:
+        print(f"Error during HellaSwag evaluation: {e}")
+        import traceback; traceback.print_exc()
+        return -1.0 # Indicate error
+
+    acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0
+    print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})")
+    return acc_norm
+# -----------------------------------------------------------------------------
+
 # --- Example Usage (Modified for direct execution) ---
 if __name__ == '__main__':
     # Configuration for LMA
