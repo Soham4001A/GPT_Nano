@@ -221,30 +221,35 @@ class LatentMetaAttention(nn.Module):
         attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
         if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE mask!"); return torch.zeros_like(z)
 
+        # (B, nH, T_latent, hs) @ (B, nH, hs, T_latent) -> (B, nH, T_latent, T_latent)
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
+
+        # Apply Dynamic Mask
         attn_scores = attn_scores.masked_fill(dynamic_mask.unsqueeze(1), float('-inf'))
-        all_masked_rows = torch.all(attn_scores == float('-inf'), dim=-1)
-        # Calculate query_pad_mask_final as before
+
+        # --- Start Corrected Debug Check ---
+        # Calculate all_masked_rows per head
+        all_masked_rows_per_head = torch.all(attn_scores == float('-inf'), dim=-1) # Shape: (B, nH, T_latent)
+
+        # Reshape query_pad_mask to match all_masked_rows_per_head
         query_pad_mask = (query_max_t == -1) # (B, T_latent, 1)
-        query_pad_mask_expanded = query_pad_mask.unsqueeze(1).expand(-1, self.n_head_latent, -1, -1) # (B, nH, T_latent, 1)
-        query_pad_mask_final = query_pad_mask_expanded.squeeze(-1).reshape(B * self.n_head_latent, T_latent) # (B*nH, T_latent)
+        query_pad_mask_expanded_debug = query_pad_mask.permute(0, 2, 1).expand(-1, self.n_head_latent, -1) # (B, nH, T_latent)
 
-        # --- Add shape prints ---
-        print(f"DEBUG shapes before logical AND:")
-        print(f"  all_masked_rows.shape: {all_masked_rows.shape}")
-        print(f"  query_pad_mask_final.shape: {query_pad_mask_final.shape}")
-        # --- End shape prints ---
+        # Perform the check using tensors of the same shape (B, nH, T_latent)
+        fully_masked_non_padding = all_masked_rows_per_head & (~query_pad_mask_expanded_debug)
 
-        fully_masked_non_padding = all_masked_rows & (~query_pad_mask_final)
         if torch.any(fully_masked_non_padding):
-            print(f"WARNING: {torch.sum(fully_masked_non_padding)} NON-PADDING attention rows are fully masked!")
-            
-        if torch.isnan(attn_scores).any() or (torch.isinf(attn_scores) & (attn_scores != float('-inf'))).any(): print("NaN/Inf DETECTED in attn_scores AFTER mask!"); return torch.zeros_like(z)
+             # Sum over all dimensions (B, nH, T_latent) to get total count
+             print(f"WARNING: {torch.sum(fully_masked_non_padding)} NON-PADDING attention rows are fully masked!")
+        # --- End Corrected Debug Check ---
 
-        # Safeguarded Softmax
+        # Safeguarded Softmax (uses original attn_scores)
+        all_masked_rows_check_softmax = torch.all(attn_scores == float('-inf'), dim=-1) # Recalculate just in case (B, nH, T_latent)
+        # ... (rest of softmax and attention application as before) ...
         attn_scores_safe = torch.where(attn_scores == float('-inf'), torch.finfo(attn_scores.dtype).min, attn_scores)
         attn_probs = F.softmax(attn_scores_safe, dim=-1)
-        # Zero out probs where the input row was all -inf (softmax should technically handle this, but belt-and-suspenders)
-        attn_probs = torch.where(all_masked_rows.unsqueeze(-1), torch.zeros_like(attn_probs), attn_probs)
+        # Zero out probs where the input row was all -inf
+        attn_probs = torch.where(all_masked_rows_check_softmax.unsqueeze(-1), torch.zeros_like(attn_probs), attn_probs) # Use unsqueeze(-1) for broadcasting
 
         if torch.isnan(attn_probs).any(): print("NaN DETECTED in attn_probs AFTER softmax!"); return torch.zeros_like(z)
         attn_probs = self.attn_dropout(attn_probs)
