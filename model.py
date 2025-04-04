@@ -551,7 +551,7 @@ class GPT(nn.Module):
             # Check if sequence length needs adjustment
             if x.size(1) != target_len_for_loss:
                 latent_len = x.size(1)
-                print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len_for_loss}. Upsampling via Interpolation...")
+                #print(f"Shape mismatch for loss: Logits L={latent_len}, Targets L={target_len_for_loss}. Upsampling via Interpolation...")
 
                 # Use Interpolation
                 x_permuted = x.permute(0, 2, 1) # -> (B, D_final, L_final)
