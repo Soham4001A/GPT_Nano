@@ -96,7 +96,7 @@ dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported
 compile = False # Disable torch.compile initially for broader compatibility/debugging
 
 # --- HellaSwag ---
-hellaswag = True # Default to False, override with config file or cmd line
+hellaswag = False # Default to False, override with config file or cmd line
 hellaswag_path = 'data/hellaswag/hellaswag_val.jsonl' # Default path
 
 # -----------------------------------------------------------------------------
