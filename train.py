@@ -332,7 +332,7 @@ if ddp:
          print("ERROR: Cannot use DDP with MPS device due to backend limitations.")
          # Consider exiting or forcing CPU if DDP is critical
          exit(1) # Exit if DDP+MPS requested
-    model = DDP(model, device_ids=[ddp_local_rank] if device_type == 'cuda' else None) # Only specify device_ids for CUDA
+    model = DDP(model, device_ids=[ddp_local_rank] if device_type == 'cuda' else None, find_unused_parameters=True)
 # --------------------------
 
 # ---- Loss Estimation Function ----
