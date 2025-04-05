@@ -395,11 +395,16 @@ class GPT(nn.Module):
         n_params=sum(p.numel() for p in self.parameters())
         if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-        if module.bias is not None: torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02) # No bias init
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None: # Check bias ONLY for Linear
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # NO BIAS CHECK HERE FOR EMBEDDING
         elif isinstance(module, LayerNorm):
-             if module.bias is not None: torch.nn.init.zeros_(module.bias)
+            if module.bias is not None: # Check bias ONLY for LayerNorm
+                torch.nn.init.zeros_(module.bias)
     def crop_block_size(self, block_size): raise NotImplementedError("LMA block size cropping not supported.")
     @classmethod
     def from_pretrained(cls, model_type, override_args=None): raise NotImplementedError("Loading pretrained LMA models not supported.")
