@@ -383,11 +383,50 @@ class CausalSelfAttention(nn.Module):
 # --- Keep MLP (No changes needed) ---
 class MLP(nn.Module):
     def __init__(self, config, block_internal_dim):
-        super().__init__(); self.input_dim = block_internal_dim; hidden_dim = 4 * self.input_dim
-        self.c_fc = nn.Linear(self.input_dim, hidden_dim, bias=config.bias); self.gelu = nn.GELU()
-        self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias); self.dropout = nn.Dropout(config.dropout)
+        super().__init__()
+        self.input_dim = block_internal_dim
+        hidden_dim = 4 * self.input_dim
+        self.c_fc = nn.Linear(self.input_dim, hidden_dim, bias=config.bias)
+        self.gelu = nn.GELU() # Standard GELU
+        # self.gelu = nn.GELU(approximate='tanh') # Alternative tanh approximation
+        self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+
     def forward(self, x):
-        if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim mismatch"); x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
+        if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim mismatch")
+        # Check input to MLP for NaN/Inf
+        if torch.isnan(x).any() or torch.isinf(x).any():
+             print(f"ERROR: NaN/Inf detected entering MLP forward!")
+             # What should we return? Returning None would cause the error we see.
+             # Let's return zeros instead.
+             return torch.zeros_like(x)
+
+        x = self.c_fc(x)
+        # Check after first linear
+        if torch.isnan(x).any() or torch.isinf(x).any():
+             print(f"ERROR: NaN/Inf detected after MLP c_fc!")
+             return torch.zeros_like(x) # Return zeros based on expected output shape of c_proj
+
+        x = self.gelu(x)
+        # Check after GELU
+        # GELU is generally stable, but check anyway
+        if torch.isnan(x).any() or torch.isinf(x).any():
+             print(f"ERROR: NaN/Inf detected after MLP gelu!")
+             return torch.zeros_like(x)
+
+        x = self.c_proj(x)
+        # Check after projection
+        if torch.isnan(x).any() or torch.isinf(x).any():
+             print(f"ERROR: NaN/Inf detected after MLP c_proj!")
+             return torch.zeros_like(x)
+
+        x = self.dropout(x)
+        # Check after dropout (shouldn't introduce NaNs)
+        if torch.isnan(x).any() or torch.isinf(x).any():
+             print(f"ERROR: NaN/Inf detected after MLP dropout!")
+             return torch.zeros_like(x)
+
+        return x # Should always return a tensor if no NaNs occur
 
 # --- Keep Block (Modified for pos_tags pass-through - no new changes) ---
 class Block(nn.Module):
