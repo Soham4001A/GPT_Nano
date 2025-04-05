@@ -24,6 +24,7 @@ import math
 import pickle
 from contextlib import nullcontext
 import tiktoken # <--- IMPORT TIKTOKEN
+import torch.nn.functional as F
 
 import numpy as np
 import torch
@@ -223,6 +224,17 @@ if init_from == 'scratch':
     model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
+    gate_params = [p for n, p in model.named_parameters() if 'gate_net.' in n] # Identify gate parameters
+    main_params = [p for n, p in model.named_parameters() if 'gate_net.' not in n] # All other parameters
+    if not gate_params:
+        print("WARNING: No parameters found containing 'gate_net.'. Gate training will not work.")
+        # Decide how to handle: exit, or skip gate training?
+        # For now, let's allow it to continue but gate training steps will do nothing.
+        can_train_gate = False
+    else:
+        can_train_gate = True
+        print(f"Identified {len(gate_params)} gate parameters.")
+    print(f"Identified {len(main_params)} main parameters.")
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
@@ -283,9 +295,17 @@ scaler = torch.amp.GradScaler(enabled=scaler_enabled)
 print(f"Using GradScaler: {scaler_enabled}")
 
 optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+# Separate optimizer for the gate (maybe different LR?)
+gate_lr = 1e-5 # Example: potentially smaller LR for gate
+optimizer_gate = torch.optim.AdamW(gate_params, lr=gate_lr, betas=(beta1, beta2), weight_decay=weight_decay) # Separate optimizer
 if init_from == 'resume' and 'optimizer' in checkpoint: # Check if optimizer state exists
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
+
+# --- Training Control ---
+train_gate_every_n_steps = 10 # Train gate every 10 main steps (hyperparameter)
+gate_training_steps = 1 # Number of gate steps per gate training cycle
+
 # -----------------------------
 
 # ---- Compile Model (Optional) ----
@@ -360,6 +380,13 @@ def estimate_loss(model):
     return out
 # -----------------------------
 
+# --- Add this Helper Function ---
+def set_requires_grad(params, requires_grad):
+    """Helper function to set requires_grad for a list of parameters."""
+    for p in params:
+        p.requires_grad_(requires_grad) # Use requires_grad_ for in-place modification
+# --- End Helper Function ---
+
 # ---- LR Scheduler ----
 def get_lr(it):
     if not decay_lr: return learning_rate # Return fixed LR if decay is off
@@ -402,14 +429,16 @@ raw_model = model.module if ddp else model # unwrap DDP
 running_mfu = -1.0
 print("\nStarting training loop...")
 while True:
+    # --- Determine Phase ---
+    is_main_training_step = (iter_num % train_gate_every_n_steps != 0) or (iter_num == 0)
+    is_gate_training_step = (iter_num % train_gate_every_n_steps == 0) and (iter_num > 0)
 
-    # Determine and set LR
-    lr = get_lr(iter_num) if decay_lr else learning_rate
+    # --- Set LR (for main optimizer) ---
+    lr = get_lr(iter_num)
     for param_group in optimizer.param_groups: param_group['lr'] = lr
 
-    # Evaluate loss and save checkpoints
+    # --- Evaluation ---
     if iter_num % eval_interval == 0 and master_process:
-        # Set model to eval mode before estimating loss
         model.eval()
         # --- Add Debug Print ---
         print(f"DEBUG: Type of ctx BEFORE calling estimate_loss: {type(ctx)}")
@@ -435,6 +464,96 @@ while True:
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
     if iter_num == 0 and eval_only: break
 
+    # --- Forward/Backward (Main Model or Gate) ---
+    if is_main_training_step:
+        # === Train Main Model (Gate Frozen) ===
+        set_requires_grad(gate_params, False) # Freeze gate
+        set_requires_grad(main_params, True)  # Unfreeze main
+
+        for micro_step in range(gradient_accumulation_steps):
+            if ddp: model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+            with ctx:
+                logits, loss = model(X, Y) # Standard forward pass
+                loss = loss / gradient_accumulation_steps
+            X, Y = get_batch('train') # Prefetch next for main OR gate training
+            scaler.scale(loss).backward()
+
+        if grad_clip != 0.0: scaler.unscale_(optimizer); torch.nn.utils.clip_grad_norm_(main_params, grad_clip)
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)
+        lossf = loss.item() * gradient_accumulation_steps
+
+    elif is_gate_training_step:
+        # === Train Gate Model (Main Frozen) ===
+        print(f"\n--- Training Gate Network (Iter {iter_num}) ---")
+        set_requires_grad(gate_params, True)   # Unfreeze gate
+        set_requires_grad(main_params, False) # Freeze main
+
+        total_gate_loss = 0.0
+        # Use the X, Y prefetched previously
+        context_sequence = X # (B, T) - Use the full batch context
+
+        # Autoregressive generation step-by-step to get gate loss
+        # This is EXPENSIVE - only do a few steps or use a smaller batch?
+        # Let's try on the full batch for 'gate_training_steps' iterations
+        for _ in range(gate_training_steps): # Loop for gate optimizer steps
+             gate_loss_accum = 0.0
+             # Process the sequence token by token to get loss ONLY for the gate
+             for t_step in range(1, context_sequence.size(1)): # From second token up to end
+                  if ddp: model.require_backward_grad_sync = (t_step == context_sequence.size(1) - 1) # Sync on last step? Or every step? Check DDP best practices for this type of loss
+                  
+                  current_context = context_sequence[:, :t_step] # (B, t_step)
+                  target_token = context_sequence[:, t_step]    # (B,) - the actual next token
+
+                  with ctx:
+                       # Forward pass for THIS step ONLY
+                       # Model needs to handle variable length input correctly
+                       # We only care about the prediction for the *next* token
+                       logits_step, _ = model(current_context, targets=None) # Get full logits (B, t_step, V)
+                       
+                       # We need the loss for the token at t_step
+                       # Logits for predicting target_token are at sequence position t_step-1
+                       logits_for_target = logits_step[:, t_step-1, :] # (B, V)
+                       
+                       # Calculate cross entropy loss for this step
+                       step_loss = F.cross_entropy(logits_for_target, target_token)
+
+                  # Accumulate loss for gate training step
+                  # Should we average over sequence length? Or sum? Let's average.
+                  gate_loss_accum += step_loss / (context_sequence.size(1) - 1) # Average over sequence steps processed
+
+             # Backward pass for the gate using accumulated step losses
+             # This assumes gradients from different steps don't interfere badly? Needs thought.
+             # Maybe better: Calculate loss only on the *last* token prediction of the *full sequence*? Simpler.
+
+             # === Revised Gate Loss Calculation (Simpler: Use last token loss) ===
+             # No inner loop needed, use full X, Y from get_batch
+             if ddp: model.require_backward_grad_sync = True # Always sync for gate step
+
+             with ctx:
+                  logits_full, loss_main_ignored = model(X, Y) # Run full forward
+                  # We want the gradients ONLY for the gate from this loss
+                  # Calculate loss explicitly again IF NEEDED or just use loss_main_ignored?
+                  # Using loss_main_ignored might have stale grads if main wasn't trained just before.
+                  # Recompute loss for safety, ensuring main params are frozen.
+                  gate_objective_loss = F.cross_entropy(logits_full.view(-1, logits_full.size(-1)), Y.view(-1), ignore_index=-1)
+
+             scaler.scale(gate_objective_loss).backward() # Calculate gradients ONLY for gate params
+
+             if grad_clip != 0.0: scaler.unscale_(optimizer_gate); torch.nn.utils.clip_grad_norm_(gate_params, grad_clip)
+             scaler.step(optimizer_gate)
+             scaler.update()
+             optimizer_gate.zero_grad(set_to_none=True)
+             total_gate_loss += gate_objective_loss.item()
+             print(f"    Gate step loss: {gate_objective_loss.item():.4f}")
+             # Get next batch for next potential gate step (or main step)
+             X, Y = get_batch('train')
+
+
+        lossf = total_gate_loss / gate_training_steps # Average gate loss over its steps
+        print(f"--- Finished Gate Training (Iter {iter_num}) Avg Loss: {lossf:.4f} ---")
+        
     # Forward backward update with gradient accumulation
     for micro_step in range(gradient_accumulation_steps):
         if ddp: model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)

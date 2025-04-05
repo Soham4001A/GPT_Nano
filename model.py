@@ -60,6 +60,34 @@ class LayerNorm(nn.Module):
         eps = 1e-5
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, eps)
 
+class GateNet(nn.Module):
+    """
+    A simple MLP to predict attention gating weights based on Query/Key context.
+    Input: Concatenated features derived from Query and Key.
+    Output: Logits for the gating sigmoid (higher logit -> higher keep probability).
+    """
+    def __init__(self, input_dim, hidden_dim_multiplier=1, bias=True):
+        super().__init__()
+        hidden_dim = max(1, input_dim // hidden_dim_multiplier) # Smaller hidden layer
+        # Reduce dimensionality first, then apply non-linearity, then output logit
+        self.fc1 = nn.Linear(input_dim, hidden_dim, bias=bias)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_dim, 1, bias=bias) # Output a single logit
+        print(f"  Initializing GateNet: InputDim={input_dim}, HiddenDim={hidden_dim}")
+
+        # Initialize final layer bias for high initial keep probability
+        if bias:
+            # Initialize bias of fc2 to a positive value (e.g., 2.0)
+            # sigmoid(2.0) is approx 0.88, encouraging attention initially
+            torch.nn.init.constant_(self.fc2.bias, 2.0)
+
+    def forward(self, x):
+        # x shape: (B * nH * T_latent * T_latent, input_dim) or similar flattened structure
+        x = self.act(self.fc1(x))
+        logits = self.fc2(x)
+        return logits
+# --- End Gate Network Definition ---
+
 # --- GPTConfig ---
 @dataclass
 class GPTConfig:
@@ -171,12 +199,11 @@ class LMA_InitialTransform(nn.Module):
         pos_tags = torch.stack([min_t_per_latent, max_t_per_latent], dim=2)
         return z, pos_tags
 
-# --- Latent Attention (Rewritten for ApproxMOC Soft Masking) ---
+# --- Latent Attention (Modified for Trainable Gate + ApproxMOC) ---
 class LatentMetaAttention(nn.Module):
     """
-    LMA Core Logic - Manual MHA with Approximate Masked Origin Count (ApproxMOC)
-    Soft Masking using exponential decay based on Min/Max position tags.
-    Includes NaN/Inf checks.
+    LMA Core Logic - Manual MHA with ApproxMOC Soft Masking
+    AND a Trainable Gate Network for refinement.
     """
     def __init__(self, config, lma_latent_config: LMAConfig):
         super().__init__()
@@ -187,99 +214,97 @@ class LatentMetaAttention(nn.Module):
         if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
              raise ValueError(f"Invalid latent attention params: d={self.d_latent}, nH={self.n_head_latent}")
         self.head_dim = self.d_latent // self.n_head_latent
-        print(f"  Initializing LatentMetaAttention (Manual MHA, ApproxMOC Soft Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+
+        print(f"  Initializing LatentMetaAttention (Manual MHA, ApproxMOC + Trainable Gate): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+
         self.q_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.k_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.v_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
         self.attn_dropout = nn.Dropout(self.dropout_rate)
         self.resid_dropout = nn.Dropout(self.dropout_rate)
-        self.register_buffer("causal_mask_latent", None, persistent=False) # Not used
 
-        # --- Hyperparameter for ApproxMOC decay ---
-        # Smaller value means faster decay (stronger penalty for lookahead)
-        self.approx_moc_decay_rate = 0.8 # Tunable (e.g., 0.5, 0.8, 0.9)
+        # --- Instantiate GateNet ---
+        # Define input dimension for GateNet. Simple option: head_dim * 2 (from q & k head)
+        # More complex: Could include relative positional info or approx_moc value
+        gate_input_dim = self.head_dim * 2
+        self.gate_net = GateNet(input_dim=gate_input_dim, hidden_dim_multiplier=4, bias=self.bias) # Adjust multiplier if needed
+        # --- End GateNet Instantiation ---
+
+        self.approx_moc_decay_rate = 0.8 # Tunable
         print(f"    ApproxMOC decay rate: {self.approx_moc_decay_rate}")
-        # ---
 
     def forward(self, z, pos_tags): # Input z:(B, T_latent, d_latent), pos_tags:(B, T_latent, 2)
         B, T_latent, C_latent = z.size()
-        # --- Input Checks ---
+        # --- Input Checks (Keep previous checks) ---
         if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in input z!"); return torch.zeros_like(z)
         if C_latent != self.d_latent: raise ValueError(f"LatentAttention C ({C_latent}) != d_latent ({self.d_latent})")
-        if pos_tags is None: raise ValueError("pos_tags required for dynamic masking.")
-        if pos_tags.shape[:2] != (B, T_latent) or pos_tags.shape[2] != 2: raise ValueError(f"pos_tags shape mismatch. Expected ({B}, {T_latent}, 2), got {pos_tags.shape}")
+        if pos_tags is None: raise ValueError("pos_tags required.")
+        if pos_tags.shape[:2] != (B, T_latent) or pos_tags.shape[2] != 2: raise ValueError(f"pos_tags shape mismatch.")
         if T_latent > self.L_latent: print(f"Warning: T_latent ({T_latent}) > max L_latent ({self.L_latent}). Truncating."); z=z[:,:self.L_latent,:]; pos_tags=pos_tags[:,:self.L_latent,:]; T_latent=self.L_latent
         # --- End Input Checks ---
 
-        # --- Approximate MOC Calculation ---
-        min_t = pos_tags[:, :, 0] # (B, T_latent)
-        max_t = pos_tags[:, :, 1] # (B, T_latent)
-
-        # Expand for broadcasting: Query (dim 1), Key (dim 2)
-        query_max_t = max_t.unsqueeze(2) # (B, T_latent, 1)
-        key_min_t   = min_t.unsqueeze(1) # (B, 1, T_latent)
-        key_max_t   = max_t.unsqueeze(1) # (B, 1, T_latent)
-
-        # Estimate the number of key timesteps t_k such that query_max_t < t_k <= key_max_t
-        # lower_bound = torch.max(key_min_t - 1, query_max_t) # Effective start for counting violation
-        # approx_moc = F.relu(key_max_t - lower_bound) # Count steps strictly after query_max_t up to key_max_t
-        # Simpler calculation: Count steps from query_max + 1 up to key_max
-        approx_moc = F.relu(key_max_t - query_max_t) # How many steps the key extends beyond the query's end
-
-        # Handle padding: if query or key is padding (-1), MOC should lead to maximal penalty (or zero weight)
-        is_query_pad = (query_max_t == -1) # (B, T_latent, 1)
-        is_key_pad = (key_min_t == -1)   # (B, 1, T_latent)
-        is_pad_involved = is_query_pad | is_key_pad # (B, T_latent, T_latent) -> True if Q or K is padding
-
-        # Calculate exponential decay weights
-        # Weights = decay_rate ^ approx_moc
-        # Use .float() for the exponent base if decay_rate is not float
-        weights = torch.pow(self.approx_moc_decay_rate, approx_moc.float()) # Shape: (B, T_latent, T_latent)
-
-        # Set weight to 0 if query or key involves padding
-        weights = torch.where(is_pad_involved, torch.zeros_like(weights), weights)
+        # --- ApproxMOC Calculation (Keep as before) ---
+        min_t = pos_tags[:, :, 0]; max_t = pos_tags[:, :, 1]
+        query_max_t = max_t.unsqueeze(2); key_min_t = min_t.unsqueeze(1); key_max_t = max_t.unsqueeze(1)
+        approx_moc = F.relu(key_max_t - query_max_t)
+        is_query_pad = (query_max_t == -1); is_key_pad = (key_min_t == -1)
+        is_pad_involved = is_query_pad | is_key_pad
+        weights_moc = torch.pow(self.approx_moc_decay_rate, approx_moc.float())
+        weights_moc = torch.where(is_pad_involved, torch.zeros_like(weights_moc), weights_moc) # Shape (B, T_l, T_l)
         # --- End ApproxMOC Calculation ---
 
         # --- Manual Multi-Head Attention ---
         q = self.q_proj(z); k = self.k_proj(z); v = self.v_proj(z)
         if torch.isnan(q).any() or torch.isnan(k).any() or torch.isnan(v).any(): print("NaN DETECTED in Q, K, or V!"); return torch.zeros_like(z)
 
-        q = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
-        k = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
-        v = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        q_heads = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        k_heads = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        v_heads = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
 
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim)) # (B, nH, T_l, T_l)
-        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE weighting!"); return torch.zeros_like(z)
+        attn_scores = torch.matmul(q_heads, k_heads.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim)) # (B, nH, T_l, T_l)
+        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE softmax!"); return torch.zeros_like(z)
 
-        # Apply Softmax (No hard masking needed before softmax now)
-        # Handle potential -inf scores if inputs are extreme? Usually softmax handles this.
-        # Add check just in case:
-        # attn_scores = torch.where(torch.isneginf(attn_scores), torch.finfo(attn_scores.dtype).min, attn_scores)
+        # --- Gate Network Calculation ---
+        # Prepare input for GateNet: concat query and key features for each pair (i, j)
+        # q_heads: (B, nH, T_l, hs) -> expand for keys -> (B, nH, T_l, T_l, hs)
+        # k_heads: (B, nH, T_l, hs) -> expand for queries -> (B, nH, T_l, T_l, hs)
+        q_expanded = q_heads.unsqueeze(3).expand(-1, -1, -1, T_latent, -1)
+        k_expanded = k_heads.unsqueeze(2).expand(-1, -1, T_latent, -1, -1)
+        gate_input = torch.cat([q_expanded, k_expanded], dim=-1) # Shape (B, nH, T_l, T_l, hs*2)
+
+        # Reshape for GateNet MLP (expects 2D input: batch_dim, feature_dim)
+        gate_input_flat = gate_input.view(B * self.n_head_latent * T_latent * T_latent, self.head_dim * 2)
+        gate_logits_flat = self.gate_net(gate_input_flat) # Output shape (B*nH*T_l*T_l, 1)
+        gate_logits = gate_logits_flat.view(B, self.n_head_latent, T_latent, T_latent) # Reshape back
+
+        gate_weights = torch.sigmoid(gate_logits) # Shape (B, nH, T_l, T_l)
+        # --- End Gate Network Calculation ---
+
+        # --- Apply Softmax and Combine Weights ---
         attn_probs = F.softmax(attn_scores, dim=-1) # (B, nH, T_l, T_l)
         if torch.isnan(attn_probs).any(): print("NaN DETECTED in attn_probs AFTER softmax!"); return torch.zeros_like(z)
 
-        # Apply ApproxMOC weights POST-Softmax
-        # Expand weights from (B, T_l, T_l) to (B, 1, T_l, T_l) for broadcasting
-        attn_probs = attn_probs * weights.unsqueeze(1)
+        # Combine ApproxMOC weights and learned gate weights
+        # Expand weights_moc to match head dim: (B, T_l, T_l) -> (B, 1, T_l, T_l)
+        final_weights = weights_moc.unsqueeze(1) * gate_weights # Element-wise multiplication
 
-        # Optional: Renormalize probabilities after weighting
-        # This ensures each query's attention distribution sums to 1 again.
-        # Might be important if decay is strong.
+        # Apply combined weights to probabilities
+        attn_probs = attn_probs * final_weights
+
+        # Renormalize
         renorm_factor = attn_probs.sum(dim=-1, keepdim=True)
-        attn_probs = attn_probs / (renorm_factor + 1e-6) # Add epsilon for stability
+        attn_probs = attn_probs / (renorm_factor + 1e-6)
 
         if torch.isnan(attn_probs).any(): print("NaN DETECTED in attn_probs AFTER weighting/renorm!"); return torch.zeros_like(z)
         attn_probs = self.attn_dropout(attn_probs)
+        # --- End Weight Application ---
 
         # Apply Attention to V
-        y = torch.matmul(attn_probs, v) # (B, nH, T_l, hs)
+        y = torch.matmul(attn_probs, v_heads) # (B, nH, T_l, hs)
         if torch.isnan(y).any() or torch.isinf(y).any(): print("NaN/Inf DETECTED in y AFTER attn @ v!"); return torch.zeros_like(z)
 
-        # Reshape and Combine Heads
         y = y.transpose(1, 2).contiguous().view(B, T_latent, self.d_latent)
-
-        # Output Projection
         y_proj = self.c_proj(y)
         if torch.isnan(y_proj).any() or torch.isinf(y_proj).any(): print("NaN/Inf DETECTED in y_proj AFTER c_proj!"); return torch.zeros_like(z)
         y = self.resid_dropout(y_proj)
@@ -390,8 +415,6 @@ class Block(nn.Module):
         self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
 
     def forward(self, x, pos_tags=None): # Accept optional pos_tags
-        # Input x: (B, T_current, self.operating_dim)
-        # Input pos_tags: (B, T_current, 2) if LMA, else None
         B, T_current, C_current = x.shape
         if C_current != self.operating_dim:
              block_type = "LMA" if self.use_lma else "MHA"
@@ -403,14 +426,13 @@ class Block(nn.Module):
             attn_output = self.attn(x_norm1, pos_tags) # Pass pos_tags
         else:
             attn_output = self.attn(x_norm1) # MHA doesn't need pos_tags
-        x = x + attn_output
+        x = x + attn_output # Residual connection 1
 
         x_norm2 = self.ln_2(x)
         mlp_output = self.mlp(x_norm2)
-        x = x + mlp_output
+        x = x + mlp_output # Residual connection 2
 
-        # Return data and pass pos_tags through unmodified
-        return x, pos_tags
+        return x, pos_tags # Return data and pass pos_tags through
 
 
 # --- Main GPT Model (Modified for pos_tags flow) ---
