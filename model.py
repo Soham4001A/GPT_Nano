@@ -408,20 +408,51 @@ class Block(nn.Module):
         self.mlp = MLP(config, self.operating_dim)
         self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
 
-    def forward(self, x, pos_tags=None): # Accept optional pos_tags
+    def forward(self, x, pos_tags=None):
+        # --- Input ---
+        if x is None: raise ValueError(f"Block {id(self)} received None for input x!")
         B, T_current, C_current = x.shape
         if C_current != self.operating_dim: raise ValueError(f"Block C mismatch")
+        if self.use_lma and pos_tags is None: raise ValueError("LMA Block requires pos_tags.")
+
+        # --- Attention + Residual 1 ---
+        x_input_residual1 = x # Store input for residual
         x_norm1 = self.ln_1(x)
+        if torch.isnan(x_norm1).any(): raise ValueError(f"NaN after ln_1 in Block {id(self)}")
+
         if self.use_lma:
-            if pos_tags is None: raise ValueError("LMA Block requires pos_tags.")
-            attn_output = self.attn(x_norm1, pos_tags) # Pass pos_tags
+            attn_output = self.attn(x_norm1, pos_tags)
         else:
             attn_output = self.attn(x_norm1)
-        x = x + attn_output
+
+        if attn_output is None: raise ValueError(f"attn_output is None in Block {id(self)}")
+        if torch.isnan(attn_output).any(): raise ValueError(f"NaN in attn_output in Block {id(self)}")
+
+        # Perform residual add 1
+        x = x_input_residual1 + attn_output
+        if torch.isnan(x).any(): raise ValueError(f"NaN after residual add 1 in Block {id(self)}")
+
+        # --- MLP + Residual 2 ---
+        x_input_residual2 = x # Store input for residual 2
         x_norm2 = self.ln_2(x)
+        if torch.isnan(x_norm2).any(): raise ValueError(f"NaN after ln_2 in Block {id(self)}")
+
         mlp_output = self.mlp(x_norm2)
-        x = x + mlp_output
-        return x, pos_tags # Return data and pass pos_tags through
+
+        if mlp_output is None: raise ValueError(f"mlp_output is None in Block {id(self)}")
+        if torch.isnan(mlp_output).any(): raise ValueError(f"NaN in mlp_output in Block {id(self)}")
+
+        # --- Check operands before final add ---
+        if x_input_residual2 is None: raise ValueError("x (input to res2) became None!")
+        if not isinstance(x_input_residual2, torch.Tensor): raise TypeError(f"x (input to res2) is not Tensor: {type(x_input_residual2)}")
+        if not isinstance(mlp_output, torch.Tensor): raise TypeError(f"mlp_output is not Tensor: {type(mlp_output)}")
+        if x_input_residual2.shape != mlp_output.shape: raise ValueError(f"Shape mismatch for residual add 2: x={x_input_residual2.shape}, mlp={mlp_output.shape}")
+
+        # Perform residual add 2 - THIS IS THE LINE FROM TRACEBACK
+        x = x_input_residual2 + mlp_output
+        if torch.isnan(x).any(): raise ValueError(f"NaN after residual add 2 in Block {id(self)}")
+
+        return x, pos_tags
 
 # --- Keep GPT __init__ (No new changes needed) ---
 class GPT(nn.Module):
