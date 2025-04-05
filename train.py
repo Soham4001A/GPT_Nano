@@ -398,16 +398,18 @@ class GPT(nn.Module):
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'): torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
         print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
-    def get_num_params(self, non_embedding=True): n_params=sum(p.numel() for p in self.parameters()); if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
+    def get_num_params(self, non_embedding=True):
+        n_params=sum(p.numel() for p in self.parameters())
+        if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02);
+        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         if module.bias is not None: torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
         elif isinstance(module, LayerNorm):
              if module.bias is not None: torch.nn.init.zeros_(module.bias)
     def forward(self, idx, targets=None): # Same forward as before, handles pos_tags tuple
         device = idx.device; b, t = idx.size()
-        if t > self.config.block_size: idx = idx[:, -self.config.block_size:]; t = self.config.block_size;
+        if t > self.config.block_size: idx = idx[:, -self.config.block_size:]; t = self.config.block_size
         if targets is not None and targets.shape[1] > self.config.block_size: targets = targets[:, -self.config.block_size:]
         pos = torch.arange(0, t, dtype=torch.long, device=device); tok_emb = self.transformer.wte(idx); pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb); original_T = t; pos_tags = None
