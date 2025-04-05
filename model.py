@@ -107,75 +107,139 @@ class LMA_InitialTransform(nn.Module):
         self.chunk_gate_decay_rate = 0.9 # Tunable hyperparameter
         print(f"   Chunk Gating Decay Rate: {self.chunk_gate_decay_rate}")
 
-    def forward(self, y): # Input y is (B, T, d0)
-        B, T, C = y.size()
-        if C != self.d0: raise ValueError(f"LMA InitialTransform C({C}) != d0({self.d0})")
-        device = y.device
+    def forward(self, z, pos_tags): # Input z:(B, T_latent, d_latent), pos_tags:(B, T_latent, 2)
+        B, T_latent, C_latent = z.size()
 
-        # --- Handle Sequence Length for Data ---
-        padded_y = y
-        if T < self.L: padded_y = F.pad(y, (0, 0, 0, self.L - T))
-        elif T > self.L: print(f"Warning: LMA Transform T={T} > L={self.L}. Truncating."); padded_y = y[:, -self.L:, :]
-        assert padded_y.size(1) == self.L
+        # --- Input Checks ---
+        # Check for NaNs/Infs in the input latent state z
+        if torch.isnan(z).any() or torch.isinf(z).any():
+            print("NaN/Inf DETECTED in input z! Returning zeros.")
+            return torch.zeros_like(z) # Return zeros of the same shape as z
 
-        # --- Process Data (Stage 2a & 2b Embedding) ---
-        try: head_views = torch.split(padded_y, self.d_k, dim=2)
-        except RuntimeError as e: raise RuntimeError(f"Error splitting heads") from e
-        x_stacked = torch.cat(head_views, dim=1)
-        x_flat = x_stacked.view(B, -1)
-        if x_flat.shape[1] != self.L_new * self.C_new: raise RuntimeError(f"Config mismatch: L*d0 != L_new*C_new.")
-        x_rechunked = x_flat.view(B, self.L_new, self.C_new)
-        z_embedded_flat = self.embed_layer_2(x_rechunked.view(-1, self.C_new))
-        z_activated = self.embed_layer_2_act(z_embedded_flat)
-        z_nogate = z_activated.view(B, self.L_new, self.d_new) # Latent state BEFORE gating
+        # Check input dimension
+        if C_latent != self.d_latent:
+            raise ValueError(f"LatentAttention input C ({C_latent}) != configured d_latent ({self.d_latent})")
 
-        # --- Process Position Indices and Calculate Chunk Gate ---
-        pos_indices = torch.arange(T, device=device, dtype=torch.long).view(1, T, 1).expand(B, T, 1)
-        padded_pos = pos_indices
-        if T < self.L: padded_pos = F.pad(pos_indices, (0, 0, 0, self.L - T), value=-1)
-        elif T > self.L: padded_pos = pos_indices[:, -self.L:, :]
-        pos_stacked = padded_pos.repeat(1, self.n_head_stacking, 1)
-        pos_flat = pos_stacked.view(B, -1)
-        L_nH = self.L * self.n_head_stacking
-        C_pos = -1; target_len_pos = -1
-        if L_nH == 0 or self.L_new == 0 :
-            print(f"Warning: L_nH={L_nH} or L_new={self.L_new} zero. Pos tags invalid.");
-            pos_rechunked = torch.full((B, self.L_new, 1), -1, dtype=torch.long, device=device); C_pos = 1
-        elif L_nH % self.L_new == 0:
-            C_pos = L_nH // self.L_new; target_len_pos = L_nH
-            pos_rechunked = pos_flat.view(B, self.L_new, C_pos)
-        else:
-            print(f"Warning: L*nH ({L_nH}) not divisible by L_new ({self.L_new}). Padding positions.")
-            C_pos_float = L_nH / self.L_new; C_pos = math.ceil(C_pos_float)
-            target_len_pos = self.L_new * C_pos; padding_size_pos = target_len_pos - L_nH
-            pos_flat_padded = F.pad(pos_flat, (0, padding_size_pos), value=-1)
-            pos_rechunked = pos_flat_padded.view(B, self.L_new, C_pos)
-            if pos_rechunked.shape[1] * pos_rechunked.shape[2] != target_len_pos: raise RuntimeError("Pos rechunk mismatch.")
+        # Check for presence of position tags
+        if pos_tags is None:
+            raise ValueError("pos_tags cannot be None for LatentMetaAttention dynamic masking.")
 
-        min_val_replace = T; max_val_replace = -1
-        pos_for_min = torch.where(pos_rechunked == -1, min_val_replace, pos_rechunked)
-        pos_for_max = torch.where(pos_rechunked == -1, max_val_replace, pos_rechunked)
-        min_t = torch.min(pos_for_min, dim=2)[0] # (B, L_new)
-        max_t = torch.max(pos_for_max, dim=2)[0] # (B, L_new)
+        # Check position tags shape
+        if pos_tags.shape[:2] != (B, T_latent) or pos_tags.shape[2] != 2:
+            raise ValueError(f"pos_tags shape mismatch. Expected ({B}, {T_latent}, 2), got {pos_tags.shape}")
 
-        # If a latent position only contained padding, min will be T and max will be -1. Reset these.
-        min_t_clean = torch.where(min_t == min_val_replace, -1, min_t) # Correctly uses min_t if condition is false
-        max_t_clean = torch.where(max_t == max_val_replace, -1, max_t)      # Correct: Use max_t if condition is false
+        # Handle potential sequence length mismatch (should ideally be handled upstream)
+        if T_latent > self.L_latent:
+            print(f"Warning: LatentAttention input T_latent ({T_latent}) > max L_latent ({self.L_latent}). Truncating.")
+            z = z[:, :self.L_latent, :]
+            pos_tags = pos_tags[:, :self.L_latent, :]
+            T_latent = self.L_latent # Update T_latent to the truncated length
+        # --- End Input Checks ---
 
-        # Stack min and max tags
-        pos_tags = torch.stack([min_t_clean, max_t_clean], dim=2) # Shape: (B, L_new, 2)
+        # --- Approximate MOC Calculation ---
+        min_t = pos_tags[:, :, 0] # (B, T_latent)
+        max_t = pos_tags[:, :, 1] # (B, T_latent)
 
-        # ... (Calculate chunk gate using max_t, min_t before cleaning) ...
-        chunk_span = F.relu(max_t - min_t) # Use original min/max for span calculation
-        chunk_gate_weight = torch.pow(self.chunk_gate_decay_rate, chunk_span.float()) # (B, L_new)
-        # Set gate to 0 if chunk is padding (use cleaned min_t to detect padding)
-        is_chunk_pad = (min_t_clean == -1) # Check cleaned min_t
-        chunk_gate_weight = torch.where(is_chunk_pad, torch.zeros_like(chunk_gate_weight), chunk_gate_weight)
+        # Expand for broadcasting: Query (dim 1 -> unsqueezed dim 2), Key (dim 2 -> unsqueezed dim 1)
+        query_max_t = max_t.unsqueeze(2) # (B, T_latent, 1)
+        key_min_t   = min_t.unsqueeze(1) # (B, 1, T_latent)
+        key_max_t   = max_t.unsqueeze(1) # (B, 1, T_latent)
 
-        # Apply chunk gate to the latent state z
-        z = z_nogate * chunk_gate_weight.unsqueeze(-1) # Unsqueeze to multiply feature dim
+        # Estimate the number of key timesteps t_k such that query_max_t < t_k <= key_max_t
+        approx_moc = F.relu(key_max_t - query_max_t) # Shape: (B, T_latent, T_latent)
 
-        return z, pos_tags # Return gated z and cleaned pos_tags
+        # Handle padding: if query or key is padding (-1), MOC should lead to maximal penalty (zero weight)
+        is_query_pad = (query_max_t == -1) # (B, T_latent, 1)
+        is_key_pad = (key_min_t == -1)   # (B, 1, T_latent)
+        is_pad_involved = is_query_pad | is_key_pad # Shape (B, T_latent, T_latent)
+
+        # Calculate exponential decay weights
+        weights_moc = torch.pow(self.approx_moc_decay_rate, approx_moc.float()) # Shape: (B, T_latent, T_latent)
+
+        # Set weight to 0 if query or key involves padding
+        weights_moc = torch.where(is_pad_involved, torch.zeros_like(weights_moc), weights_moc)
+        # --- End ApproxMOC Calculation ---
+
+        # --- Manual Multi-Head Attention ---
+        # 1. Project Q, K, V
+        q = self.q_proj(z) # (B, T_latent, d_latent)
+        k = self.k_proj(z) # (B, T_latent, d_latent)
+        v = self.v_proj(z) # (B, T_latent, d_latent)
+
+        # Check for NaNs after projections
+        if torch.isnan(q).any() or torch.isnan(k).any() or torch.isnan(v).any():
+            print("NaN DETECTED in Q, K, or V! Returning zeros.")
+            return torch.zeros_like(z) # Return shape (B, T_latent, d_latent)
+
+        # 2. Reshape for Multi-Head
+        q_heads = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        k_heads = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+        v_heads = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2) # (B, nH, T_l, hs)
+
+        # 3. Calculate Scaled Dot-Product Attention Scores
+        attn_scores = torch.matmul(q_heads, k_heads.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim)) # (B, nH, T_l, T_l)
+
+        # Check for NaNs/Infs before applying weights/softmax
+        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any():
+            print("NaN/Inf DETECTED in attn_scores BEFORE weighting! Returning zeros.")
+            return torch.zeros_like(z)
+
+        # --- Apply Softmax and Combine Weights ---
+        # 4. Softmax (No hard masking before)
+        attn_probs = F.softmax(attn_scores, dim=-1) # (B, nH, T_l, T_l)
+
+        # Check for NaNs after softmax
+        if torch.isnan(attn_probs).any():
+            print("NaN DETECTED in attn_probs AFTER softmax! Returning zeros.")
+            return torch.zeros_like(z)
+
+        # 5. Apply ApproxMOC weights POST-Softmax
+        # Expand weights_moc from (B, T_l, T_l) to (B, 1, T_l, T_l) for broadcasting
+        final_weights = weights_moc.unsqueeze(1)
+        attn_probs = attn_probs * final_weights # Element-wise multiplication
+
+        # 6. Optional: Renormalize probabilities
+        renorm_factor = attn_probs.sum(dim=-1, keepdim=True)
+        attn_probs = attn_probs / (renorm_factor + 1e-6) # Add epsilon for stability
+
+        # Check for NaNs after weighting/renormalization
+        if torch.isnan(attn_probs).any():
+            print("NaN DETECTED in attn_probs AFTER weighting/renorm! Returning zeros.")
+            return torch.zeros_like(z)
+
+        # 7. Apply Attention Dropout
+        attn_probs = self.attn_dropout(attn_probs)
+        # --- End Weight Application ---
+
+        # 8. Apply Attention to V
+        y = torch.matmul(attn_probs, v_heads) # (B, nH, T_l, hs)
+
+        # Check for NaNs/Infs after weighted sum
+        if torch.isnan(y).any() or torch.isinf(y).any():
+            print("NaN/Inf DETECTED in y AFTER attn @ v! Returning zeros.")
+            return torch.zeros_like(z)
+
+        # 9. Reshape and Combine Heads
+        y = y.transpose(1, 2).contiguous().view(B, T_latent, self.d_latent)
+
+        # 10. Output Projection
+        y_proj = self.c_proj(y)
+
+        # Check for NaNs/Infs after output projection
+        if torch.isnan(y_proj).any() or torch.isinf(y_proj).any():
+            print("NaN/Inf DETECTED in y_proj AFTER c_proj! Returning zeros.")
+            # Return shape should match final output y
+            return torch.zeros_like(y) # Use y's shape before dropout
+
+        # 11. Apply Residual Dropout
+        y = self.resid_dropout(y_proj)
+
+        # Final Check
+        if torch.isnan(y).any() or torch.isinf(y).any():
+            print("NaN/Inf DETECTED in y AFTER resid_dropout! Returning zeros.")
+            return torch.zeros_like(y)
+
+        return y # Final attention output
 
 # --- Latent Attention (Uses ApproxMOC Soft Masking - No GateNet Needed Here Anymore) ---
 class LatentMetaAttention(nn.Module):
