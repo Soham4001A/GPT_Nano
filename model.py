@@ -1,7 +1,8 @@
 # ----- model.py -----
 """
 Full definition of a GPT Language Model, all of it in this single file.
-Incorporates Latent Meta Attention (LMA) using a pre-computed Static Causal Mask.
+Incorporates Time-Chunking LMA: Reduces sequence length by chunking time
+and stacking features, followed by standard causal attention in the reduced space.
 """
 
 import math
@@ -17,10 +18,10 @@ from contextlib import nullcontext
 from tiktoken.core import Encoding # For HellaSwag
 
 # -----------------------------------------------------------------------------
-# Helper Function: find_closest_divisor (needed by LMAConfig)
+# Helper Function: find_closest_divisor (Still potentially useful for LMAConfig logic)
 # -----------------------------------------------------------------------------
+# (Keep the find_closest_divisor function as defined before)
 def find_closest_divisor(total_value, target_divisor, max_delta=100):
-    """ Finds closest divisor. """
     if not isinstance(total_value, int) or total_value <= 0: raise ValueError(f"total_value positive integer.")
     if not isinstance(target_divisor, int) or target_divisor <= 0: target_divisor = max(1, target_divisor)
     if not isinstance(max_delta, int) or max_delta < 0: raise ValueError(f"max_delta non-negative.")
@@ -45,8 +46,13 @@ def find_closest_divisor(total_value, target_divisor, max_delta=100):
 class GPTConfig:
     block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12
     n_head: int = 12; n_embd: int = 768; dropout: float = 0.0
-    bias: bool = True; use_lma: bool = False; lma_reduction_factor: int = 2
-    lma_mask_path: str = None # New optional field for path to precomputed mask
+    bias: bool = True
+    # --- LMA (Time Chunking) Specific ---
+    use_lma: bool = False # If True, uses TimeChunkingTransform + Attention on reduced dims
+    lma_reduction_factor: int = 2 # Determines k for L -> L/k length reduction
+    # Optional: Specify target d_new, otherwise derived from n_embd / factor
+    lma_d_new: int = None # Target latent dimension (optional)
+    # lma_mask_path is no longer needed
 
 class LayerNorm(nn.Module):
     """ LayerNorm with optional bias. """
@@ -59,178 +65,180 @@ class LayerNorm(nn.Module):
         if input.size(-1) != expected_dim: raise RuntimeError(f"LayerNorm dim mismatch")
         eps = 1e-5; return F.layer_norm(input, self.weight.shape, self.weight, self.bias, eps)
 
-@dataclass
-class LMAConfig:
-    """ LMA Configuration - Calculates L_new, C_new """
-    d0: int; L: int; n_head_stacking: int; target_L_new: int; d_new: int; n_head_latent: int
-    L_new: int = field(init=False); C_new: int = field(init=False)
-    def __post_init__(self):
-        if self.L <= 0 or self.d0 <= 0 or self.n_head_stacking <= 0 or \
-           self.target_L_new <= 0 or self.d_new <= 0 or self.n_head_latent <= 0: raise ValueError("LMAConfig inputs must be positive.")
-        if self.d0 % self.n_head_stacking != 0: raise ValueError(f"LMA d0 not divisible by nH_stacking")
-        if self.d_new % self.n_head_latent != 0: raise ValueError(f"LMA d_new not divisible by nH_latent")
-        total_features = self.L * self.d0;
-        if total_features == 0: raise ValueError("LMA total features cannot be zero.")
-        try:
-            self.L_new = find_closest_divisor(total_features, self.target_L_new)
-            if self.L_new != self.target_L_new: print(f"LMAConfig ADJUSTMENT: L_new {self.target_L_new} -> {self.L_new}")
-            if self.L_new <= 0: raise ValueError(f"Calculated L_new not positive.")
-            if total_features % self.L_new != 0: raise RuntimeError(f"Internal Error: total_features not divisible by L_new")
-            self.C_new = total_features // self.L_new
-            if self.C_new <= 0: raise ValueError(f"Calculated C_new not positive.")
-        except ValueError as e: raise ValueError(f"LMA Config Error calculating L_new/C_new: {e}") from e
+# LMAConfig might be simplified or removed if not heavily used elsewhere,
+# but TimeChunkingTransform needs L, d0, k, d_new.
+# Let's keep a simplified config structure or pass params directly.
+# For now, let TimeChunkingTransform take params from main GPTConfig.
 
-# --- LMA Initial Transformation Layer (Simplified - NO Gating, NO pos_tags return) ---
-class LMA_InitialTransform(nn.Module):
-    """ Performs LMA Stage 1/2 mapping (B,T,d0) -> z (B, L_new, d_new). No gating here. """
-    def __init__(self, config, lma_config: LMAConfig):
+# --- Time Chunking Transformation Layer ---
+class TimeChunkingTransform(nn.Module):
+    """
+    Reduces sequence length L -> L/k by chunking time and stacking features.
+    Maps stacked features (d0*k) -> d_new.
+    """
+    def __init__(self, config: GPTConfig):
         super().__init__()
-        self.config = config; self.lma_config = lma_config
-        if lma_config.d0 <= 0 or lma_config.n_head_stacking <= 0: raise ValueError("LMA Init Transform d0/nH err")
-        if lma_config.d0 % lma_config.n_head_stacking != 0: raise ValueError(f"LMA Init Transform d0/nH mismatch")
-        self.d0 = lma_config.d0; self.L = lma_config.L; self.n_head_stacking = lma_config.n_head_stacking
-        self.d_k = self.d0 // self.n_head_stacking; self.d_new = lma_config.d_new
-        self.L_new = lma_config.L_new; self.C_new = lma_config.C_new; self.bias = config.bias
-        print(f" Init LMA InitialTransform: In(L={self.L}, d0={self.d0}) -> Out(L_new={self.L_new}, d_new={self.d_new})")
-        self.embed_layer_2 = nn.Linear(self.C_new, self.d_new, bias=self.bias)
-        self.embed_layer_2_act = nn.GELU()
+        self.config = config
+        self.reduction_factor = config.lma_reduction_factor
+        self.L = config.block_size # Original max sequence length
+        self.d0 = config.n_embd   # Original embedding dim
 
-    def forward(self, y): # Input y is (B, T, d0)
-        B, T, C = y.size()
-        if C != self.d0: raise ValueError(f"LMA Transform C({C}) != d0({self.d0})")
+        if self.L % self.reduction_factor != 0:
+            raise ValueError(f"block_size ({self.L}) must be divisible by lma_reduction_factor ({self.reduction_factor}) for TimeChunking.")
+        self.L_new = self.L // self.reduction_factor # Reduced sequence length
+        self.d_stacked = self.d0 * self.reduction_factor # Intermediate feature dim
 
-        padded_y = y
-        if T < self.L: padded_y = F.pad(y, (0, 0, 0, self.L - T))
-        elif T > self.L: padded_y = y[:, -self.L:, :]
-        assert padded_y.size(1) == self.L
+        # Determine target d_new
+        if config.lma_d_new is not None and config.lma_d_new > 0:
+             self.d_new = config.lma_d_new
+        else: # Derive d_new from d0 and factor
+             target_d_new = self.d0 // self.reduction_factor
+             self.d_new = max(1, target_d_new) # Ensure positive
+        # Ensure d_new is divisible by n_head for subsequent attention
+        if self.d_new % config.n_head != 0:
+            original_d_new = self.d_new
+            self.d_new = max(config.n_head, (self.d_new // config.n_head) * config.n_head)
+            if self.d_new == 0: self.d_new = config.n_head # Fallback
+            print(f"TimeChunking LMA: Adjusted d_new from {original_d_new} to {self.d_new} to be divisible by n_head ({config.n_head})")
 
-        try: head_views = torch.split(padded_y, self.d_k, dim=2)
-        except RuntimeError as e: raise RuntimeError(f"Error splitting heads") from e
-        x_stacked = torch.cat(head_views, dim=1)
-        x_flat = x_stacked.view(B, -1)
-        if x_flat.shape[1] != self.L_new * self.C_new: raise RuntimeError(f"LMA Config mismatch L*d0 != L_new*C_new.")
-        x_rechunked = x_flat.view(B, self.L_new, self.C_new)
-        z_embedded_flat = self.embed_layer_2(x_rechunked.view(-1, self.C_new))
-        z_activated = self.embed_layer_2_act(z_embedded_flat)
-        z = z_activated.view(B, self.L_new, self.d_new)
+        print(f" Init TimeChunkingTransform: In(L={self.L}, d0={self.d0}) -> Stack(k={self.reduction_factor}, L_new={self.L_new}, d_stack={self.d_stacked}) -> Out(L_new={self.L_new}, d_new={self.d_new})")
 
-        # Return ONLY z, no pos_tags
+        self.proj = nn.Linear(self.d_stacked, self.d_new, bias=config.bias)
+        self.act = nn.GELU()
+
+    def forward(self, x): # Input x is (B, T, d0)
+        B, T, C = x.size()
+        if C != self.d0: raise ValueError(f"TimeChunkingTransform C ({C}) != d0 ({self.d0})")
+
+        # Handle sequences shorter than L by padding
+        padded_x = x
+        if T < self.L:
+            padded_x = F.pad(x, (0, 0, 0, self.L - T)) # Pad C, then T dim
+        elif T > self.L: # Should be handled upstream, but truncate just in case
+            padded_x = x[:, -self.L:, :]
+        assert padded_x.size(1) == self.L
+
+        # Time Chunking and Stacking Features
+        # Reshape to (B, k, L_new, d0)
+        x_chunked = padded_x.view(B, self.reduction_factor, self.L_new, self.d0)
+        # Permute to (B, L_new, k, d0)
+        x_permuted = x_chunked.permute(0, 2, 1, 3)
+        # Reshape to (B, L_new, k * d0)
+        x_time_stacked = x_permuted.contiguous().view(B, self.L_new, self.d_stacked)
+
+        # Project to d_new
+        z_proj = self.proj(x_time_stacked.view(-1, self.d_stacked)) # Flatten B, L_new for Linear
+        z = self.act(z_proj)
+        z = z.view(B, self.L_new, self.d_new) # Reshape back
+
+        # Return latent state z with reduced length L_new and dim d_new
         return z
 
-# --- Latent Attention (Using Pre-computed Static Mask loaded from file/config) ---
-class LatentMetaAttention(nn.Module):
-    """ LMA Core Logic - Uses a pre-computed static causal mask. """
-    def __init__(self, config: GPTConfig, lma_config: LMAConfig):
+# --- Latent Attention becomes Standard CausalSelfAttention operating on d_new ---
+# We can reuse CausalSelfAttention, but need to adapt its internal dimensions OR create a new class.
+# Let's create a new class for clarity.
+
+class LatentCausalSelfAttention(nn.Module):
+    """ Standard MHA implementation adapted for latent dimension d_new. """
+    def __init__(self, config: GPTConfig, d_new: int, n_head_latent: int, L_new: int):
         super().__init__()
-        self.config = config; self.lma_config = lma_config
-        self.d_latent = lma_config.d_new; self.L_latent = lma_config.L_new
-        self.n_head_latent = lma_config.n_head_latent; self.bias = config.bias
-        self.dropout_rate = config.dropout
-        if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
-             raise ValueError(f"Invalid latent attention params: d={self.d_latent}, nH={self.n_head_latent}")
-        self.head_dim = self.d_latent // self.n_head_latent
+        assert d_new % n_head_latent == 0
+        self.d_new = d_new
+        self.n_head = n_head_latent
+        self.L_new = L_new # Max sequence length for mask buffer
 
-        print(f"  Initializing LatentMetaAttention (Static Precomputed Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+        # key, query, value projections for all heads, but in a batch
+        self.c_attn = nn.Linear(self.d_new, 3 * self.d_new, bias=config.bias)
+        # output projection
+        self.c_proj = nn.Linear(self.d_new, self.d_new, bias=config.bias)
+        # regularization
+        self.attn_dropout = nn.Dropout(config.dropout)
+        self.resid_dropout = nn.Dropout(config.dropout)
+        self.dropout = config.dropout
 
-        # --- Load or Reference Pre-computed Static Mask ---
-        mask_path = config.lma_mask_path # Get path from main config
-        mask_tensor = None
-        if mask_path and os.path.exists(mask_path):
-            try:
-                mask_tensor = torch.load(mask_path, map_location='cpu')
-                print(f"    Loaded static mask from: {mask_path}")
-                # Validate shape
-                if mask_tensor.shape != (self.L_latent, self.L_latent):
-                    print(f"ERROR: Loaded mask shape {mask_tensor.shape} != expected ({self.L_latent}, {self.L_latent})!")
-                    mask_tensor = None # Invalidate mask
-                elif mask_tensor.dtype != torch.bool:
-                    print(f"Warning: Loaded mask dtype is {mask_tensor.dtype}, converting to bool.")
-                    mask_tensor = mask_tensor.bool()
-            except Exception as e:
-                print(f"ERROR loading static mask from {mask_path}: {e}")
-                mask_tensor = None
-        elif config.use_lma: # Only warn if LMA is active but no mask found
-             print(f"WARNING: lma_mask_path '{mask_path}' not found or not specified. Latent attention will not be masked!")
+        # causal mask to ensure that attention is only applied to the left in the input sequence
+        # Use standard triangular mask for length L_new
+        self.flash = hasattr(F, 'scaled_dot_product_attention')
+        if self.flash:
+             print(f"  Initializing LatentCausalSelfAttention: Flash Attention enabled. d_new={d_new}, nH={n_head_latent}")
+             self.register_buffer("bias", None, persistent=False)
+        else:
+             print(f"  Initializing LatentCausalSelfAttention: Using slow attention. d_new={d_new}, nH={n_head_latent}")
+             mask = torch.tril(torch.ones(self.L_new, self.L_new))
+             self.register_buffer("bias", mask.view(1, 1, self.L_new, self.L_new), persistent=False)
 
-        if mask_tensor is None and config.use_lma:
-            print("    Proceeding without static causal mask for latent attention.")
-            self.register_buffer("static_causal_mask", None, persistent=False)
-        elif mask_tensor is not None:
-             self.register_buffer("static_causal_mask", mask_tensor, persistent=False)
-        # --- End Mask Loading ---
+    def forward(self, x): # Input x: (B, T_latent, d_new)
+        B, T, C = x.size() # T is current T_latent <= L_new
+        if C != self.d_new: raise ValueError(f"LatentCausalSelfAttention C ({C}) != d_new ({self.d_new})")
 
-        # Using nn.MultiheadAttention for efficiency with static mask
-        self.latent_attn = nn.MultiheadAttention(
-            embed_dim=self.d_latent, num_heads=self.n_head_latent,
-            dropout=self.dropout_rate, bias=self.bias, batch_first=True
-        )
-        self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
-        self.resid_dropout = nn.Dropout(self.dropout_rate)
+        q, k, v  = self.c_attn(x).split(self.d_new, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
-    def forward(self, z): # Input z:(B, T_latent, d_latent) - NO pos_tags needed
-        B, T_latent, C_latent = z.size()
-        if C_latent != self.d_latent: raise ValueError(f"LatentAttention C != d_latent")
-        if T_latent > self.L_latent: z = z[:, :self.L_latent, :]; T_latent = self.L_latent
+        # Use flash attention if possible
+        if self.flash and self.dropout == 0.0:
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
+        else:
+             if self.flash and hasattr(F, 'scaled_dot_product_attention'):
+                  # print("Warning: Latent Flash Attention with dropout.") # Reduce noise
+                  y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
+             else: # Manual implementation
+                att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+                if self.bias is None: raise RuntimeError("Slow attention needs bias buffer")
+                # Slice standard causal mask
+                att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+                att = F.softmax(att, dim=-1)
+                att = self.attn_dropout(att)
+                y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
 
-        attn_mask_to_use = None
-        if hasattr(self, 'static_causal_mask') and self.static_causal_mask is not None:
-             if T_latent > self.static_causal_mask.shape[0]:
-                  raise ValueError(f"T_latent {T_latent} > static mask dim {self.static_causal_mask.shape[0]}")
-             attn_mask_slice = self.static_causal_mask[:T_latent, :T_latent]
-             # nn.MHA expects True where masked
-             attn_mask_to_use = attn_mask_slice.to(z.device)
-        # else: # No mask available or registered
-        #      print("DEBUG: No mask applied in LatentMetaAttention forward.")
-        #      pass # attn_mask_to_use remains None
-
-        # Use nn.MultiheadAttention
-        # Q, K, V are all derived from z internally by the layer
-        attn_output, _ = self.latent_attn(z, z, z,
-                                           attn_mask=attn_mask_to_use,
-                                           need_weights=False,
-                                           is_causal=False) # Explicit mask provided
-
-        y = self.resid_dropout(self.c_proj(attn_output))
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # Re-assemble heads
+        y = self.resid_dropout(self.c_proj(y)) # Output projection
         return y
 
-# --- LMA_Decoder (No changes needed from previous version) ---
+# --- LMA_Decoder (Still needed for length upsampling) ---
 class LMA_Decoder(nn.Module):
-    """ Maps latent (B, L_new, d_new) back to (B, T, d_output) """
-    def __init__(self, config: GPTConfig, lma_config: LMAConfig):
-        super().__init__(); self.config = config; self.lma_config = lma_config
-        self.L_new = lma_config.L_new; self.d_new = lma_config.d_new; self.d_output = self.d_new
+    """ Maps latent (B, L_new, d_new) back to (B, T, d_output=d_new) """
+    def __init__(self, config: GPTConfig, L_new: int, d_new: int): # Takes L_new, d_new directly
+        super().__init__(); self.config = config;
+        self.L_new = L_new; self.d_new = d_new; self.d_output = d_new # Output dim matches input dim
         self.bias = config.bias; self.dropout = config.dropout
         print(f" Init LMA Decoder: In(L_new={self.L_new}, d_new={self.d_new}) -> Out(T, d_output={self.d_output})")
-        self.ln = LayerNorm(self.d_new, bias=self.bias); hidden_dim = self.d_new * 2
+        self.ln = LayerNorm(self.d_new, bias=self.bias); hidden_dim = self.d_new * 2 # Standard MLP sizing
         self.fc1 = nn.Linear(self.d_new, hidden_dim, bias=self.bias); self.act = nn.GELU()
         self.fc2 = nn.Linear(hidden_dim, self.d_output, bias=self.bias); self.drop = nn.Dropout(self.dropout)
-    def forward(self, z, target_T):
+    def forward(self, z, target_T): # z shape: (B, T_latent, d_new), T_latent <= L_new
         B, current_L_new, current_d_new = z.shape
-        if current_L_new > self.L_new : print(f"Warning: Decoder L_new > config L_new"); z = z[:,:self.L_new,:] # Truncate defensively
+        if current_L_new > self.L_new : print(f"Warning: Decoder L_new > config L_new"); z = z[:,:self.L_new,:] # Truncate
         if current_d_new != self.d_new: raise ValueError(f"LMA_Decoder d mismatch")
+        # Check for NaNs before potentially problematic interpolation
         if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in LMA_Decoder input!"); return torch.zeros(B, target_T, self.d_output, device=z.device, dtype=z.dtype)
+        # Check if input length is zero before interpolating
+        if current_L_new == 0: print("Warning: LMA_Decoder received zero-length input."); return torch.zeros(B, target_T, self.d_output, device=z.device, dtype=z.dtype)
         z_permuted = z.permute(0, 2, 1)
         try: z_interpolated = F.interpolate(z_permuted, size=target_T, mode='linear', align_corners=False)
         except Exception as e: print(f"ERROR during interpolate: {e}"); raise e
         z_upsampled = z_interpolated.permute(0, 2, 1)
+        # Check after interpolation
         if torch.isnan(z_upsampled).any() or torch.isinf(z_upsampled).any(): print("NaN/Inf DETECTED AFTER interpolation!"); return torch.zeros_like(z_upsampled)
         z_norm = self.ln(z_upsampled); z_hidden = self.act(self.fc1(z_norm)); z_refined = self.fc2(z_hidden)
         z_output = self.drop(z_refined)
-        if self.d_output == self.d_new: z_output = z_upsampled + z_output
+        if self.d_output == self.d_new: z_output = z_upsampled + z_output # Residual connection
+        # Final check
         if torch.isnan(z_output).any() or torch.isinf(z_output).any(): print("NaN/Inf DETECTED in LMA_Decoder output!"); return torch.zeros_like(z_output)
         return z_output
 
-# --- CausalSelfAttention (Unchanged) ---
+# --- CausalSelfAttention (Standard MHA - Keep unchanged) ---
 class CausalSelfAttention(nn.Module):
-    """ Standard MHA implementation """
+    # (Keep the previous standard CausalSelfAttention code exactly as it was)
     def __init__(self, config):
         super().__init__(); assert config.n_embd % config.n_head == 0
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.attn_dropout = nn.Dropout(config.dropout); self.resid_dropout = nn.Dropout(config.dropout)
         self.n_head = config.n_head; self.n_embd = config.n_embd; self.dropout = config.dropout
-        self.flash = hasattr(F, 'scaled_dot_product_attention') # Basic check
-        if self.flash: print("Using Flash Attention (if available and applicable)."); self.register_buffer("bias", None, persistent=False)
+        self.flash = hasattr(F, 'scaled_dot_product_attention')
+        if self.flash: print("Using Flash Attention (if available/applicable)."); self.register_buffer("bias", None, persistent=False)
         else: print("WARNING: using slow attention."); mask = torch.tril(torch.ones(config.block_size, config.block_size)); self.register_buffer("bias", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
     def forward(self, x):
         B, T, C = x.size();
@@ -239,15 +247,12 @@ class CausalSelfAttention(nn.Module):
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        # Use flash attention V2 if available
-        if self.flash and self.dropout == 0.0 : # Flash V2 requires dropout=0.0 during training
-             y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
-        else: # Fallback to manual or potentially Flash V1 if supported differently
-            if self.flash and hasattr(F, 'scaled_dot_product_attention'): # Try Flash V1/general
-                 print("Warning: Using Flash Attention with dropout or non-zero dropout_p; may be slower or have different behavior.")
-                 # Flash V1 might take dropout_p != 0
+        if self.flash and self.dropout == 0.0 : y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0, is_causal=True)
+        else:
+            if self.flash and hasattr(F, 'scaled_dot_product_attention'):
+                 # print("Warning: Using Flash Attention with dropout/non-zero dropout_p.") # Reduce noise
                  y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
-            else: # Manual implementation
+            else:
                 att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
                 if self.bias is None: raise RuntimeError("Slow attention requires bias buffer")
                 slice_T = min(T, self.bias.size(-1))
@@ -255,7 +260,8 @@ class CausalSelfAttention(nn.Module):
                 att = F.softmax(att, dim=-1); att = self.attn_dropout(att); y = att @ v
         y = y.transpose(1, 2).contiguous().view(B, T, C); y = self.resid_dropout(self.c_proj(y)); return y
 
-# --- MLP (Simplified - No internal NaN checks necessary now) ---
+
+# --- MLP (Keep unchanged) ---
 class MLP(nn.Module):
     def __init__(self, config, block_internal_dim):
         super().__init__(); self.input_dim = block_internal_dim; hidden_dim = 4 * self.input_dim
@@ -263,24 +269,29 @@ class MLP(nn.Module):
         self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias); self.dropout = nn.Dropout(config.dropout)
     def forward(self, x):
         if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim mismatch")
-        # Assuming input x is clean now
         x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
 
-# --- Block (Simplified - No pos_tags pass-through needed) ---
+# --- Block (Modified for Time Chunking LMA) ---
 class Block(nn.Module):
-    """ Transformer Block: Uses MHA or LMA (with static mask). No pos_tags needed. """
-    def __init__(self, config: GPTConfig, is_lma: bool, lma_config: LMAConfig = None):
+    """ Transformer Block: Uses MHA or TimeChunkingLMA """
+    def __init__(self, config: GPTConfig, is_lma: bool, lma_latent_dim: int = None, lma_latent_len: int = None):
+        # lma_latent_dim = d_new, lma_latent_len = L_new
         super().__init__()
         self.use_lma = is_lma
         if self.use_lma:
-            if lma_config is None: raise ValueError("lma_config needed for LMA Block")
-            self.operating_dim = lma_config.d_new; self.operating_L = lma_config.L_new
-            print(f"Initializing Block {id(self)} (LMA - Static Mask): Dim={self.operating_dim}, MaxL={self.operating_L}")
-            self.attn = LatentMetaAttention(config, lma_config) # Will load/use static mask
-        else:
-            self.operating_dim = config.n_embd; self.operating_L = config.block_size
-            print(f"Initializing Block {id(self)} (MHA): Dim={self.operating_dim}, MaxL={self.operating_L}")
+            if lma_latent_dim is None or lma_latent_len is None:
+                raise ValueError("lma_latent_dim (d_new) and lma_latent_len (L_new) required for LMA Block")
+            self.operating_dim = lma_latent_dim
+            self.operating_L = lma_latent_len # Max sequence length this block sees
+            print(f"Initializing Block (TimeChunking LMA): Dim={self.operating_dim}, MaxL={self.operating_L}")
+            # Use LatentCausalSelfAttention operating on d_new
+            self.attn = LatentCausalSelfAttention(config, d_new=self.operating_dim, n_head_latent=config.n_head, L_new=self.operating_L)
+        else: # Standard MHA
+            self.operating_dim = config.n_embd
+            self.operating_L = config.block_size
+            print(f"Initializing Block (MHA): Dim={self.operating_dim}, MaxL={self.operating_L}")
             self.attn = CausalSelfAttention(config)
+
         self.ln_1 = LayerNorm(self.operating_dim, bias=config.bias)
         self.mlp = MLP(config, self.operating_dim)
         self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
@@ -288,78 +299,99 @@ class Block(nn.Module):
     def forward(self, x): # Input x: (B, T_current, self.operating_dim) - NO pos_tags
         B, T_current, C_current = x.shape
         if C_current != self.operating_dim: raise ValueError(f"Block C mismatch")
+        # NaN checks on input - maybe overkill but safe for debug
+        if torch.isnan(x).any(): raise ValueError(f"NaN in Block {id(self)} input!")
 
         x_input_residual1 = x
         x_norm1 = self.ln_1(x)
-        attn_output = self.attn(x_norm1) # LMA attention no longer needs pos_tags
-        if attn_output is None: raise ValueError(f"attn_output is None in Block {id(self)}")
-        # Basic NaN check after attention
-        if torch.isnan(attn_output).any(): raise ValueError(f"NaN in attn_output in Block {id(self)}")
+        if torch.isnan(x_norm1).any(): raise ValueError(f"NaN after ln_1 in Block {id(self)}")
+
+        attn_output = self.attn(x_norm1) # Attention (either MHA or Latent MHA)
+        if attn_output is None: raise ValueError(f"attn_output is None") # Should not happen
+        if torch.isnan(attn_output).any(): raise ValueError(f"NaN in attn_output")
+
         x = x_input_residual1 + attn_output
+        if torch.isnan(x).any(): raise ValueError(f"NaN after residual add 1")
 
         x_input_residual2 = x
         x_norm2 = self.ln_2(x)
-        if torch.isnan(x_norm2).any(): raise ValueError(f"NaN after ln_2 in Block {id(self)}")
-        mlp_output = self.mlp(x_norm2)
-        if mlp_output is None: raise ValueError(f"mlp_output is None in Block {id(self)}")
-        if torch.isnan(mlp_output).any(): raise ValueError(f"NaN in mlp_output in Block {id(self)}")
+        if torch.isnan(x_norm2).any(): raise ValueError(f"NaN after ln_2")
 
+        mlp_output = self.mlp(x_norm2)
+        if mlp_output is None: raise ValueError(f"mlp_output is None")
+        if torch.isnan(mlp_output).any(): raise ValueError(f"NaN in mlp_output")
         if x_input_residual2.shape != mlp_output.shape: raise ValueError(f"Shape mismatch res2")
+
         x = x_input_residual2 + mlp_output
-        if torch.isnan(x).any(): raise ValueError(f"NaN after residual add 2 in Block {id(self)}")
+        if torch.isnan(x).any(): raise ValueError(f"NaN after residual add 2")
 
         return x # Return only data tensor
 
-# --- GPT __init__ (Simplified - Adjust LMAConfig call) ---
+# --- GPT (Modified for Time Chunking LMA) ---
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__(); assert config.vocab_size is not None; assert config.block_size is not None
         self.config = config
+        self.time_chunk_transform = None # Renamed from initial_lma_transform
+        self.lma_decoder = None
+        self.latent_dim = config.n_embd # Dim entering blocks (changes if LMA)
+        self.latent_len = config.block_size # Length entering blocks (changes if LMA)
+
         if config.use_lma:
-             if config.n_embd % config.n_head != 0: raise ValueError(f"LMA n_embd/n_head mismatch.")
-             if config.lma_reduction_factor <= 0: raise ValueError(f"LMA reduction_factor must be > 0.")
-        self.transformer = nn.ModuleDict(dict( wte = nn.Embedding(config.vocab_size, config.n_embd), wpe = nn.Embedding(config.block_size, config.n_embd), drop = nn.Dropout(config.dropout), ))
-        self.initial_lma_transform = None; self.lma_decoder = None; self.initial_lma_cfg = None
-        current_d = config.n_embd; current_L = config.block_size; self.operates_in_latent = False
-        if config.use_lma:
-            print("--- Configuring LMA: Initial Transformation ---"); self.operates_in_latent = True
-            reduction_factor = max(1, config.lma_reduction_factor); target_l_new_init = config.block_size // reduction_factor
-            target_d_new_init = config.n_embd // reduction_factor; target_l_new_init = max(1, target_l_new_init); target_d_new_init = max(1, target_d_new_init)
-            latent_n_head = config.n_head
-            if target_d_new_init == 0: raise ValueError("Initial LMA target_d_new is zero.")
-            if target_d_new_init % latent_n_head != 0:
-                original_target_d = target_d_new_init; target_d_new_init = max(latent_n_head, (target_d_new_init // latent_n_head) * latent_n_head)
-                if target_d_new_init == 0: target_d_new_init = latent_n_head; print(f"LMA Init: Adjusted d_new {original_target_d} -> {target_d_new_init}")
-            try:
-                # Calculate LMA config but don't store globally if not needed elsewhere
-                lma_cfg_instance = LMAConfig( d0=config.n_embd, L=config.block_size, n_head_stacking=config.n_head, target_L_new=target_l_new_init, d_new=target_d_new_init, n_head_latent=latent_n_head )
-                self.initial_lma_transform = LMA_InitialTransform(config, lma_cfg_instance) # Pass instance
-                current_L = lma_cfg_instance.L_new; current_d = lma_cfg_instance.d_new
-                print(f"--- Dimensions into Blocks: Latent L={current_L}, Latent D={current_d} ---")
-            except ValueError as e: print(f"ERROR configuring Initial LMA Transform: {e}"); raise e
+             # Validation for Time Chunking
+             if config.block_size % config.lma_reduction_factor != 0:
+                  raise ValueError(f"LMA TimeChunking requires block_size ({config.block_size}) to be divisible by lma_reduction_factor ({config.lma_reduction_factor})")
+             if config.n_embd % config.n_head != 0: # Still need for head dimension calc within attention
+                  raise ValueError(f"n_embd ({config.n_embd}) not divisible by n_head ({config.n_head}).")
+             if config.lma_reduction_factor <= 0: raise ValueError("LMA reduction factor must be > 0.")
+
+             print("--- Configuring Time Chunking LMA ---")
+             # Instantiate the new transform
+             self.time_chunk_transform = TimeChunkingTransform(config)
+             self.latent_dim = self.time_chunk_transform.d_new # Blocks operate on d_new
+             self.latent_len = self.time_chunk_transform.L_new # Blocks operate on L_new
+             print(f"--- Dimensions into Blocks: Latent L={self.latent_len}, Latent D={self.latent_dim} ---")
+
+             # Decoder setup
+             print("--- Configuring LMA Decoder ---")
+             # Pass L_new and d_new directly to decoder
+             self.lma_decoder = LMA_Decoder(config, self.latent_len, self.latent_dim)
+             # Final layers operate on decoder output dim (which is d_new)
+             self.final_ln_lm_head_dim = self.lma_decoder.d_output
+             print(f"--- Dimension after Decoder: {self.final_ln_lm_head_dim} ---")
+        else:
+             # Standard MHA path
+             self.latent_dim = config.n_embd
+             self.latent_len = config.block_size
+             self.final_ln_lm_head_dim = config.n_embd
+
+
+        self.transformer = nn.ModuleDict(dict(
+            wte = nn.Embedding(config.vocab_size, config.n_embd),
+            wpe = nn.Embedding(config.block_size, config.n_embd),
+            drop = nn.Dropout(config.dropout),
+        ))
+
         print(f"--- Building {config.n_layer} Transformer Blocks ---"); blocks = []
         for i in range(config.n_layer):
-            is_lma_block = self.operates_in_latent; block_lma_config = None
-            if is_lma_block:
-                # Need LMAConfig again for the block's attention layer
-                # Recreate it or ensure initial_lma_cfg was stored
-                if 'lma_cfg_instance' not in locals(): raise RuntimeError("LMA config instance not available for block.")
-                block_lma_config = LMAConfig( d0=current_d, L=current_L, n_head_stacking=config.n_head, target_L_new=current_L, d_new=current_d, n_head_latent=lma_cfg_instance.n_head_latent )
-                block = Block(config, is_lma=True, lma_config=block_lma_config) # Pass LMA config
-            else: block = Block(config, is_lma=False)
+            # If LMA, pass latent dim and len, else pass None
+            lma_block_dim = self.latent_dim if config.use_lma else None
+            lma_block_len = self.latent_len if config.use_lma else None
+            block = Block(config, is_lma=config.use_lma,
+                          lma_latent_dim=lma_block_dim,
+                          lma_latent_len=lma_block_len)
             blocks.append(block)
         self.transformer['h'] = nn.ModuleList(blocks)
-        self.final_ln_lm_head_dim = current_d
-        if self.operates_in_latent:
-             if 'lma_cfg_instance' not in locals(): raise RuntimeError("LMA config instance not available for decoder.")
-             print("--- Configuring LMA: Decoder ---"); self.lma_decoder = LMA_Decoder(config, lma_cfg_instance) # Pass same LMA config
-             self.final_ln_lm_head_dim = self.lma_decoder.d_output; print(f"--- Dimension after Decoder: {self.final_ln_lm_head_dim} ---")
+
         self.transformer['ln_f'] = LayerNorm(self.final_ln_lm_head_dim, bias=config.bias)
-        self.lm_head = nn.Linear(self.final_ln_lm_head_dim, config.vocab_size, bias=False); print(f"--- Final LN & LM Head on dim: {self.final_ln_lm_head_dim} ---")
-        print(f"DEBUG: Checking weight tying. Final Dim = {self.final_ln_lm_head_dim}, n_embd = {self.config.n_embd}, use_lma = {config.use_lma}")
+        self.lm_head = nn.Linear(self.final_ln_lm_head_dim, config.vocab_size, bias=False);
+        print(f"--- Final LN & LM Head on dim: {self.final_ln_lm_head_dim} ---")
+
+        # Weight tying check
+        print(f"DEBUG: Weight tying check: FinalDim={self.final_ln_lm_head_dim}, n_embd={self.config.n_embd}, use_lma={config.use_lma}")
         if not config.use_lma and self.final_ln_lm_head_dim == config.n_embd: self.transformer.wte.weight = self.lm_head.weight; print("Weight tying enabled.")
         else: reason = "LMA is used" if config.use_lma else f"dim mismatch"; print(f"Weight tying disabled ({reason}).")
-        print(f"DEBUG: Are lm_head/wte weights same object? {self.lm_head.weight is self.transformer.wte.weight}")
+
         self.apply(self._init_weights);
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'): torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
@@ -389,11 +421,10 @@ class GPT(nn.Module):
         if targets is not None: loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         return logits, loss
 
-    # --- Keep other GPT methods (_init_weights, get_num_params, configure_optimizers, generate, etc.) ---
-    # --- (Ensure _init_weights is corrected for Embedding bias) ---
     def get_num_params(self, non_embedding=True):
         n_params=sum(p.numel() for p in self.parameters())
         if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
+        
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -405,7 +436,7 @@ class GPT(nn.Module):
         elif isinstance(module, LayerNorm):
             if module.bias is not None: # Check bias ONLY for LayerNorm
                 torch.nn.init.zeros_(module.bias)
-    def crop_block_size(self, block_size): raise NotImplementedError("LMA block size cropping not supported.")
+    def crop_block_size(self, block_size): raise NotImplementedError("LMA block size cropping not fully supported.")
     @classmethod
     def from_pretrained(cls, model_type, override_args=None): raise NotImplementedError("Loading pretrained LMA models not supported.")
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
@@ -424,8 +455,7 @@ class GPT(nn.Module):
             probs = F.softmax(logits, dim=-1); idx_next = torch.multinomial(probs, num_samples=1); idx = torch.cat((idx, idx_next), dim=1)
         self.train(); return idx
 
-# --- Keep HellaSwag evaluation logic (get_most_likely_row, evaluate_hellaswag) ---
-# (Ensure evaluate_hellaswag determines its own context and uses float32)
+# --- HellaSwag evaluation logic (Keep unchanged) ---
 def get_most_likely_row(tokens, mask, logits):
     if logits.shape[1] <= 1: print(f"Warning (get_most_likely_row): Logits seq len <= 1."); return 0
     shift_logits = logits[..., :-1, :].contiguous(); shift_tokens = tokens[..., 1:].contiguous()
@@ -489,40 +519,32 @@ def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.
     except Exception as e: print(f"Error during HS eval loop: {e}"); import traceback; traceback.print_exc(); return -1.0
     acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0; print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})"); return acc_norm
 
-# --- Keep Example Usage __main__ block (No changes needed) ---
+# --- Example Usage __main__ block ---
 if __name__ == '__main__':
-    # --- Example Config (Small LMA) ---
+    # --- Example Config (Small TimeChunking LMA) ---
     config_args = dict(
         block_size=128, vocab_size=50257, n_layer=4, n_head=4, n_embd=128,
-        dropout=0.1, bias=True, use_lma=True, lma_reduction_factor=2,
-        lma_mask_path=f"lma_masks/lma_static_mask_L128_nH4_d0128_Lnew{128*128//(128//2)}.pt" # Example path construction - needs L_new calc
+        dropout=0.1, bias=True,
+        use_lma=True,               # Enable Time Chunking LMA
+        lma_reduction_factor=2,   # k=2 => L_new = 128/2 = 64
+        lma_d_new=64                # Optional: Explicitly set d_new
+        # lma_mask_path=None # No longer needed
     )
-    # --- OR USE GPT-2 Config (Large LMA) ---
-    # L_gpt2 = 1024; nH_gpt2 = 12; d0_gpt2 = 768; reduction_factor_gpt2 = 3
-    # target_L_new_gpt2 = L_gpt2 // reduction_factor_gpt2
-    # L_new_gpt2 = find_closest_divisor(L_gpt2 * d0_gpt2, target_L_new_gpt2) # Calculate L_new based on params
+    # --- OR USE GPT-2 Config (Large TimeChunking LMA) ---
     # config_args = dict(
-    #     block_size=L_gpt2, vocab_size=50257, n_layer=12, n_head=nH_gpt2, n_embd=d0_gpt2,
-    #     dropout=0.0, bias=True, use_lma=True, lma_reduction_factor=reduction_factor_gpt2,
-    #     lma_mask_path=f"lma_masks/lma_static_mask_L{L_gpt2}_nH{nH_gpt2}_d0{d0_gpt2}_Lnew{L_new_gpt2}.pt" # Construct path
+    #     block_size=1024, vocab_size=50257, n_layer=12, n_head=12, n_embd=768,
+    #     dropout=0.0, bias=True,
+    #     use_lma=True,
+    #     lma_reduction_factor=4, # Example: k=4 => L_new = 1024/4 = 256
+    #     lma_d_new=None            # Example: Let d_new be derived (768/4=192, adjusted to 192 if n_head=12)
     # )
 
-    # --- Create config, ensuring path is set if use_lma=True ---
-    if config_args.get("use_lma", False) and config_args.get("lma_mask_path", None) is None:
-        print("WARNING: use_lma=True but no lma_mask_path provided in config_args. Add path or generate mask.")
-        # Calculate L_new needed for path (requires find_closest_divisor)
-        L=config_args['block_size']; d0=config_args['n_embd']; target_L_new=L//config_args['lma_reduction_factor']
-        try: L_new_calc = find_closest_divisor(L*d0, target_L_new)
-        except: L_new_calc = "CALC_ERROR" # Handle error
-        config_args['lma_mask_path'] = f"lma_masks/lma_static_mask_L{L}_nH{config_args['n_head']}_d0{d0}_Lnew{L_new_calc}.pt"
-        print(f"INFO: Defaulting mask path to: {config_args['lma_mask_path']}")
-        # Consider raising an error if the file doesn't exist instead of just warning
-
+    # --- Initialize ---
     gpt_config = GPTConfig(**config_args)
     print("\n--- Model Configuration ---"); print(gpt_config)
     print("\n--- Initializing Model ---"); model = GPT(gpt_config)
 
-    # ... (Rest of testing code remains the same) ...
+    # --- Testing code (remains the same) ---
     print("\n--- Testing Forward/Backward Pass ---")
     B = 4; T = gpt_config.block_size; T_short = T // 2
     dummy_input_full = torch.randint(0, gpt_config.vocab_size, (B, T)); dummy_targets_full = torch.randint(0, gpt_config.vocab_size, (B, T))
@@ -538,7 +560,7 @@ if __name__ == '__main__':
         try:
             model.train(); optimizer.zero_grad()
             logits, loss = model(dummy_input, dummy_targets)
-            print("Forward pass successful!"); print(f"  Logits shape: {logits.shape}")
+            print("Forward pass successful!"); print(f"  Logits shape: {logits.shape}") # Should be (B, T_current, Vocab)
             if loss is not None: print(f"  Loss: {loss.item()}"); loss.backward(); optimizer.step(); print("Backward pass successful!")
             else: print("  Loss is None.")
         except Exception as e: print(f"\n !!! Error FWD/BWD ({seq_len_label}) !!!"); print(e); import traceback; traceback.print_exc()
