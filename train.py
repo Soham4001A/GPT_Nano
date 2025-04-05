@@ -61,6 +61,8 @@ bias = False # do we use bias inside LayerNorm and Linear layers?
 # LMA specific flags (add defaults here if they should be configurable)
 use_lma = True
 lma_reduction_factor = 3
+L=1024; nH=12; d0=768; L_new_calc=384 # Hardcoding derived L_new for default path
+lma_mask_path = f"lma_masks/lma_static_mask_L{L}_nH{nH}_d0{d0}_Lnew{L_new_calc}.pt"
 # adamw optimizer
 learning_rate = 3e-4 # 2e-5 or 1e-5
 max_iters = 600000 # total number of training iterations
@@ -100,6 +102,30 @@ hellaswag_path = 'data/hellaswag/hellaswag_val.jsonl' # Default path
 
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
+
+if 'lma_mask_path' not in config_keys: config_keys.append('lma_mask_path')
+
+# Recalculate default mask path if overridden parameters affect L_new
+if use_lma: # Only needed if using LMA
+    try:
+        from model import find_closest_divisor # Import helper
+        L_cfg = globals()['block_size']
+        nH_cfg = globals()['n_head']
+        d0_cfg = globals()['n_embd']
+        rf_cfg = globals()['lma_reduction_factor']
+        target_L_new_cfg = L_cfg // rf_cfg
+        L_new_cfg = find_closest_divisor(L_cfg * d0_cfg, target_L_new_cfg)
+        default_mask_path = f"lma_masks/lma_static_mask_L{L_cfg}_nH{nH_cfg}_d0{d0_cfg}_Lnew{L_new_cfg}.pt"
+        # Set default only if lma_mask_path wasn't overridden by configurator/args
+        if globals()['lma_mask_path'] is None or globals()['lma_mask_path'] == f"lma_masks/lma_static_mask_L{L}_nH{nH}_d0{d0}_Lnew{L_new_calc}.pt": # Check if it's still the initial hardcoded default
+             globals()['lma_mask_path'] = default_mask_path
+             print(f"INFO: Automatically determined default lma_mask_path: {default_mask_path}")
+    except Exception as e:
+        print(f"Warning: Could not auto-determine mask path based on config: {e}")
+        if globals()['lma_mask_path'] is None:
+             print("ERROR: use_lma=True but mask path could not be determined and was not provided.")
+             exit(1)
+             
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
@@ -216,7 +242,8 @@ model_args = dict(
     n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
     bias=bias, vocab_size=None, dropout=dropout,
     use_lma=use_lma, # Pass LMA flag
-    lma_reduction_factor=lma_reduction_factor # Pass reduction factor
+    lma_reduction_factor=lma_reduction_factor, # Pass reduction factor
+    lma_mask_path=lma_mask_path
 )
 if init_from == 'scratch':
     print("Initializing a new model from scratch")
