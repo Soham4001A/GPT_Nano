@@ -402,11 +402,24 @@ class GPT(nn.Module):
         n_params=sum(p.numel() for p in self.parameters())
         if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-        if module.bias is not None: torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if isinstance(module, nn.Linear):
+            # Initialize Linear weight
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # Initialize Linear bias ONLY if it exists
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            # Initialize Embedding weight
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # NO bias check/initialization for Embedding layers
         elif isinstance(module, LayerNorm):
-             if module.bias is not None: torch.nn.init.zeros_(module.bias)
+            # LayerNorm weight is initialized to ones in its constructor
+            # Initialize LayerNorm bias ONLY if it exists
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        # Add elif for other layers (e.g., GateNet if it has layers not covered) if needed
+        # Example: Check if GateNet's Linear layers are handled correctly
+        
     def forward(self, idx, targets=None): # Same forward as before, handles pos_tags tuple
         device = idx.device; b, t = idx.size()
         if t > self.config.block_size: idx = idx[:, -self.config.block_size:]; t = self.config.block_size
