@@ -1,481 +1,543 @@
+# ----- model.py -----
 """
-This training script can be run both on a single gpu in debug mode,
-and also in a larger training run with distributed data parallel (ddp).
-
-Includes optional HellaSwag evaluation.
-
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False
-
-To run with DDP on 4 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=4 train.py
-
-To run with DDP on 4 gpus across 2 nodes, example:
-- Run on the first (master) node with example IP 123.456.123.456:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123.456 --master_port=1234 train.py
-- Run on the worker node:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py
-(If your cluster does not have Infiniband interconnect prepend NCCL_IB_DISABLE=1)
+Full definition of a GPT Language Model, all of it in this single file.
+Incorporates Latent Meta Attention (LMA) with ApproxMOC Soft Masking
+applied BOTH during Initial Transform (Chunk-Level Gating) and Latent Attention.
 """
 
-import os
-import time
 import math
-import pickle
-from contextlib import nullcontext
-import tiktoken # <--- IMPORT TIKTOKEN
-
-import numpy as np
+import inspect
+from dataclasses import dataclass, field
+import os
+import tqdm, json
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
-
-# Assuming model.py contains GPTConfig, GPT, and evaluate_hellaswag
-from model import GPTConfig, GPT, evaluate_hellaswag # <--- IMPORT evaluate_hellaswag
-
-# -----------------------------------------------------------------------------
-# default config values designed to train a gpt2 (124M) on OpenWebText
-# I/O
-out_dir = 'out'
-eval_interval = 1000
-log_interval = 1
-eval_iters = 200
-eval_only = False # if True, script exits right after the first eval
-always_save_checkpoint = True # if True, always save a checkpoint after each eval
-init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
-# wandb logging
-wandb_log = False # disabled by default
-wandb_project = 'owt'
-wandb_run_name = 'gpt2' # 'run' + str(time.time())
-# data
-dataset = 'openwebtext'
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
-# model
-n_layer = 12
-n_head = 12
-n_embd = 768
-dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
-bias = False # do we use bias inside LayerNorm and Linear layers?
-# LMA specific flags (add defaults here if they should be configurable)
-use_lma = True
-lma_reduction_factor = 3
-# adamw optimizer
-learning_rate = 3e-4 # 2e-5 or 1e-5
-max_iters = 600000 # total number of training iterations
-weight_decay = 1e-1
-beta1 = 0.9
-beta2 = 0.95
-grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
-# learning rate decay settings
-decay_lr = True # whether to decay the learning rate
-warmup_iters = 500 # how many steps to warm up for
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-min_lr = 1e-6 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-# DDP settings
-backend = 'nccl' # Default backend, will be adjusted based on device
-# system
-# --- Determine device and backend ---
-if torch.cuda.is_available():
-    device = 'cuda'
-    backend = 'nccl' # NCCL is generally preferred for CUDA DDP
-elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-    device = 'mps'
-    # Check if DDP is active later, and force CPU if DDP+MPS
-    backend = 'gloo' # Gloo *might* work, but often CPU fallback needed
-    print("WARNING: Using MPS device. DDP support might be limited or experimental.")
-else:
-    device = 'cpu'
-    backend = 'gloo' # Use Gloo for CPU distributed training
-# --- End device/backend determination ---
-
-# Dtype and Autocast setup
-dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # Use float16 by default if no bfloat16 support
-compile = False # Disable torch.compile initially for broader compatibility/debugging
-
-# --- HellaSwag ---
-hellaswag = True # Default to False, override with config file or cmd line
-hellaswag_path = 'data/hellaswag/hellaswag_val.jsonl' # Default path
+import torch.nn as nn
+from torch.nn import functional as F
+import numpy as np
+from contextlib import nullcontext
+from tiktoken.core import Encoding
 
 # -----------------------------------------------------------------------------
-config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
-exec(open('configurator.py').read()) # overrides from command line or config file
-config = {k: globals()[k] for k in config_keys} # will be useful for logging
+# Helper Functions for LMA
 # -----------------------------------------------------------------------------
 
-# ----- DDP and Device Setup -----
-ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
-if ddp:
-    # Check/adjust backend based on final device choice (esp. MPS)
-    if device == 'mps':
-        print("Warning: DDP requested with MPS device. Forcing CPU backend/device due to compatibility issues.")
-        device = 'cpu'    # Force CPU for DDP if MPS was initially detected
-        backend = 'gloo'  # Ensure Gloo backend for CPU DDP
-    elif backend == 'nccl' and not torch.cuda.is_available():
-        print("Warning: NCCL backend specified but CUDA not available. Switching to Gloo.")
-        backend = 'gloo'
+def find_closest_divisor(total_value, target_divisor, max_delta=100):
+    """ Finds closest divisor. """
+    if not isinstance(total_value, int) or total_value <= 0: raise ValueError(f"total_value ({total_value}) must be positive integer.")
+    if not isinstance(target_divisor, int) or target_divisor <= 0: target_divisor = max(1, target_divisor)
+    if not isinstance(max_delta, int) or max_delta < 0: raise ValueError(f"max_delta ({max_delta}) must be non-negative.")
+    if total_value == 0: return 1
+    if target_divisor > 0 and total_value % target_divisor == 0: return target_divisor
+    search_start = max(1, target_divisor)
+    for delta in range(1, max_delta + 1):
+        candidate_minus = search_start - delta
+        if candidate_minus > 0 and total_value % candidate_minus == 0: return candidate_minus
+        candidate_plus = search_start + delta
+        if candidate_plus > 0 and total_value % candidate_plus == 0: return candidate_plus
+    for i in range(1, int(math.sqrt(total_value)) + 1):
+        if total_value % i == 0: print(f"Warning: No divisor found near {target_divisor}. Using {i} as fallback."); return i
+    if total_value > 1: print(f"Warning: No divisor found near {target_divisor}. Using {total_value} as fallback."); return total_value
+    raise ValueError(f"Could not find any valid divisor for {total_value} near {target_divisor}.")
 
-    # Initialize process group
-    init_process_group(backend=backend)
-    ddp_rank = int(os.environ['RANK'])
-    ddp_local_rank = int(os.environ['LOCAL_RANK'])
-    ddp_world_size = int(os.environ['WORLD_SIZE'])
-    # Assign device based on local rank only if using CUDA
-    if device == 'cuda':
-        device = f'cuda:{ddp_local_rank}'
-        torch.cuda.set_device(device)
-    # For CPU DDP, 'device' remains 'cpu'
-    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
-    seed_offset = ddp_rank # each process gets a different seed
-    # world_size number of processes will be training simultaneously, so we can scale
-    # down the desired gradient accumulation iterations per process proportionally
-    assert gradient_accumulation_steps % ddp_world_size == 0
-    gradient_accumulation_steps //= ddp_world_size
-else:
-    # if not ddp, we are running on a single gpu, and one process
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
-# ------------------------------------
+# -----------------------------------------------------------------------------
+# Core Model Components
+# -----------------------------------------------------------------------------
 
-tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
-print(f"tokens per iteration will be: {tokens_per_iter:,}")
-print(f"Using device: {device}, Backend: {backend if ddp else 'N/A'}") # Log final device/backend
+class LayerNorm(nn.Module):
+    """ LayerNorm with optional bias. """
+    def __init__(self, ndim, bias):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(ndim))
+        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
-if master_process:
-    os.makedirs(out_dir, exist_ok=True)
-torch.manual_seed(1337 + seed_offset)
-torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-# Determine device type string and PyTorch dtype
-if 'cuda' in device: device_type = 'cuda'
-elif 'mps' in device: device_type = 'mps'
-else: device_type = 'cpu'
+    def forward(self, input):
+        expected_dim = self.weight.shape[0]
+        if input.size(-1) != expected_dim: raise RuntimeError(f"LayerNorm dim mismatch")
+        eps = 1e-5
+        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, eps)
 
-# Adjust dtype and autocast context based on final device_type
-if device_type == 'cuda':
-    ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-    ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-else: # CPU or MPS
-    ptdtype = torch.float32
-    dtype = 'float32' # Force float32 for CPU/MPS
-    ctx = nullcontext()
-    if device_type == 'mps': print("Using float32 on MPS device, disabling Autocast.")
+@dataclass
+class LMAConfig:
+    """ LMA Configuration """
+    d0: int; L: int; n_head_stacking: int; target_L_new: int; d_new: int; n_head_latent: int
+    L_new: int = field(init=False); C_new: int = field(init=False)
+    def __post_init__(self):
+        if self.L <= 0 or self.d0 <= 0 or self.n_head_stacking <= 0 or \
+           self.target_L_new <= 0 or self.d_new <= 0 or self.n_head_latent <= 0:
+            raise ValueError("All LMAConfig inputs must be positive.")
+        if self.d0 % self.n_head_stacking != 0: raise ValueError(f"LMA d0 not divisible by n_head_stacking")
+        if self.d_new % self.n_head_latent != 0: raise ValueError(f"LMA d_new not divisible by n_head_latent")
+        total_features = self.L * self.d0
+        if total_features == 0: raise ValueError("LMA total features cannot be zero.")
+        try:
+            self.L_new = find_closest_divisor(total_features, self.target_L_new)
+            if self.L_new != self.target_L_new: print(f"LMAConfig ADJUSTMENT: L_new {self.target_L_new} -> {self.L_new}")
+            if self.L_new <= 0: raise ValueError(f"Calculated L_new not positive.")
+            if total_features % self.L_new != 0: raise RuntimeError(f"Internal Error: total_features not divisible by L_new")
+            self.C_new = total_features // self.L_new
+            if self.C_new <= 0: raise ValueError(f"Calculated C_new not positive.")
+        except ValueError as e: raise ValueError(f"LMA Config Error calculating L_new/C_new: {e}") from e
 
-print(f"Using PyTorch dtype: {ptdtype}")
 
-# ---- Data Loader ----
-data_dir = os.path.join('data', dataset)
-train_data_path = os.path.join(data_dir, 'train.bin')
-val_data_path = os.path.join(data_dir, 'val.bin')
-# Check if data files exist
-if not os.path.exists(train_data_path) or not os.path.exists(val_data_path):
-    print("\nERROR: Training data (.bin files) not found.")
-    print(f"Expected locations: {train_data_path}, {val_data_path}")
-    print(f"Please ensure the '{dataset}' dataset is prepared correctly in the '{data_dir}' directory.")
-    print("You may need to run the data preparation script (e.g., prepare.py for openwebtext).")
-    exit(1) # Exit if data is missing
+# --- LMA Initial Transformation Layer (Modified for Chunk-Level ApproxMOC Gating) ---
+class LMA_InitialTransform(nn.Module):
+    """
+    Performs Stage 1 and Stage 2 of LMA to map (B,T,d0) -> (z, pos_tags)
+    Includes chunk-level gating based on pos_tags span before returning z.
+    """
+    def __init__(self, config, lma_config: LMAConfig):
+        super().__init__()
+        self.config = config; self.lma_config = lma_config
+        if lma_config.d0 <= 0 or lma_config.n_head_stacking <= 0: raise ValueError("LMA Init Transform d0/n_head_stacking error")
+        if lma_config.d0 % lma_config.n_head_stacking != 0: raise ValueError(f"LMA Init Transform d0/n_head_stacking mismatch")
+        self.d0 = lma_config.d0; self.L = lma_config.L; self.n_head_stacking = lma_config.n_head_stacking
+        self.d_k = self.d0 // self.n_head_stacking; self.d_new = lma_config.d_new
+        self.L_new = lma_config.L_new; self.C_new = lma_config.C_new; self.bias = config.bias
+        print(f" Init LMA InitialTransform w/ Chunk Gating: In(L={self.L}, d0={self.d0}) -> Out(L_new={self.L_new}, d_new={self.d_new}) + PosTags")
+        self.embed_layer_2 = nn.Linear(self.C_new, self.d_new, bias=self.bias)
+        self.embed_layer_2_act = nn.GELU()
+        # Decay rate for chunk gating
+        self.chunk_gate_decay_rate = 0.9 # Tunable hyperparameter
+        print(f"   Chunk Gating Decay Rate: {self.chunk_gate_decay_rate}")
 
-def get_batch(split):
-    data_path = train_data_path if split == 'train' else val_data_path
-    data = np.memmap(data_path, dtype=np.uint16, mode='r')
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    # Move data to the correct device
-    x, y = x.to(device), y.to(device)
-    # Pin memory only if using CUDA DDP? Check if beneficial otherwise.
-    # if device_type == 'cuda':
-    #     x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
-    # else:
-    #     x, y = x.to(device), y.to(device) # Simple move for CPU/MPS
-    return x, y
-# --------------------
+    def forward(self, y): # Input y is (B, T, d0)
+        B, T, C = y.size()
+        if C != self.d0: raise ValueError(f"LMA InitialTransform C({C}) != d0({self.d0})")
+        device = y.device
 
-# ---- Tokenizer for HellaSwag ----
-# NOTE: Requires tiktoken (`pip install tiktoken`)
-enc = tiktoken.get_encoding("gpt2")
-# ---------------------------------
+        # --- Handle Sequence Length for Data ---
+        padded_y = y
+        if T < self.L: padded_y = F.pad(y, (0, 0, 0, self.L - T))
+        elif T > self.L: print(f"Warning: LMA Transform T={T} > L={self.L}. Truncating."); padded_y = y[:, -self.L:, :]
+        assert padded_y.size(1) == self.L
 
-# init these up here, can override if init_from='resume' (i.e. from a checkpoint)
-iter_num = 0
-best_val_loss = 1e9
+        # --- Process Data (Stage 2a & 2b Embedding) ---
+        try: head_views = torch.split(padded_y, self.d_k, dim=2)
+        except RuntimeError as e: raise RuntimeError(f"Error splitting heads") from e
+        x_stacked = torch.cat(head_views, dim=1)
+        x_flat = x_stacked.view(B, -1)
+        if x_flat.shape[1] != self.L_new * self.C_new: raise RuntimeError(f"Config mismatch: L*d0 != L_new*C_new.")
+        x_rechunked = x_flat.view(B, self.L_new, self.C_new)
+        z_embedded_flat = self.embed_layer_2(x_rechunked.view(-1, self.C_new))
+        z_activated = self.embed_layer_2_act(z_embedded_flat)
+        z_nogate = z_activated.view(B, self.L_new, self.d_new) # Latent state BEFORE gating
 
-# attempt to derive vocab_size from the dataset meta file
-meta_path = os.path.join(data_dir, 'meta.pkl')
-meta_vocab_size = None
-if os.path.exists(meta_path):
-    with open(meta_path, 'rb') as f:
-        meta = pickle.load(f)
-    meta_vocab_size = meta['vocab_size']
-    print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
-
-# ---- Model Initialization ----
-model_args = dict(
-    n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-    bias=bias, vocab_size=None, dropout=dropout,
-    use_lma=use_lma, # Pass LMA flag
-    lma_reduction_factor=lma_reduction_factor # Pass reduction factor
-)
-if init_from == 'scratch':
-    print("Initializing a new model from scratch")
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
-elif init_from == 'resume':
-    print(f"Resuming training from {out_dir}")
-    ckpt_path = os.path.join(out_dir, 'ckpt.pt')
-    checkpoint = torch.load(ckpt_path, map_location=device)
-    checkpoint_model_args = checkpoint['model_args']
-    # Ensure crucial args match, others can be overridden
-    forced_keys = ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'use_lma'] # Added use_lma
-    for k in forced_keys:
-        # Check if key exists in checkpoint_model_args before assigning
-        if k in checkpoint_model_args:
-             model_args[k] = checkpoint_model_args[k]
+        # --- Process Position Indices and Calculate Chunk Gate ---
+        pos_indices = torch.arange(T, device=device, dtype=torch.long).view(1, T, 1).expand(B, T, 1)
+        padded_pos = pos_indices
+        if T < self.L: padded_pos = F.pad(pos_indices, (0, 0, 0, self.L - T), value=-1)
+        elif T > self.L: padded_pos = pos_indices[:, -self.L:, :]
+        pos_stacked = padded_pos.repeat(1, self.n_head_stacking, 1)
+        pos_flat = pos_stacked.view(B, -1)
+        L_nH = self.L * self.n_head_stacking
+        C_pos = -1; target_len_pos = -1
+        if L_nH == 0 or self.L_new == 0 :
+            print(f"Warning: L_nH={L_nH} or L_new={self.L_new} zero. Pos tags invalid.");
+            pos_rechunked = torch.full((B, self.L_new, 1), -1, dtype=torch.long, device=device); C_pos = 1
+        elif L_nH % self.L_new == 0:
+            C_pos = L_nH // self.L_new; target_len_pos = L_nH
+            pos_rechunked = pos_flat.view(B, self.L_new, C_pos)
         else:
-             print(f"Warning: Checkpoint missing arg '{k}'. Using default/cmd line value: {model_args.get(k)}")
-             # If loading a non-LMA checkpoint into LMA config or vice-versa, need careful handling
-             if k == 'use_lma' and model_args.get(k) != checkpoint_model_args.get(k, False): # Default checkpoint LMA to False if missing
-                  raise ValueError("Checkpoint/Config mismatch for 'use_lma'. Cannot resume.")
+            print(f"Warning: L*nH ({L_nH}) not divisible by L_new ({self.L_new}). Padding positions.")
+            C_pos_float = L_nH / self.L_new; C_pos = math.ceil(C_pos_float)
+            target_len_pos = self.L_new * C_pos; padding_size_pos = target_len_pos - L_nH
+            pos_flat_padded = F.pad(pos_flat, (0, padding_size_pos), value=-1)
+            pos_rechunked = pos_flat_padded.view(B, self.L_new, C_pos)
+            if pos_rechunked.shape[1] * pos_rechunked.shape[2] != target_len_pos: raise RuntimeError("Pos rechunk mismatch.")
 
-    # Include LMA specific args if resuming an LMA model
-    if model_args.get('use_lma', False):
-         # Check if reduction factor exists in checkpoint args, otherwise use current config
-         model_args['lma_reduction_factor'] = checkpoint_model_args.get('lma_reduction_factor', lma_reduction_factor)
+        min_val_replace = T; max_val_replace = -1
+        pos_for_min = torch.where(pos_rechunked == -1, min_val_replace, pos_rechunked)
+        pos_for_max = torch.where(pos_rechunked == -1, max_val_replace, pos_rechunked)
+        min_t = torch.min(pos_for_min, dim=2)[0] # (B, L_new)
+        max_t = torch.max(pos_for_max, dim=2)[0] # (B, L_new)
+        min_t_clean = torch.where(min_t == min_val_replace, -1, min_t)
+        max_t_clean = torch.where(max_t == max_val_replace, -1, max_t_clean) # Use max_t_clean here
+        pos_tags = torch.stack([min_t_clean, max_t_clean], dim=2) # Shape: (B, L_new, 2)
 
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
-    state_dict = checkpoint['model']
-    unwanted_prefix = '_orig_mod.'
-    for k,v in list(state_dict.items()):
-        if k.startswith(unwanted_prefix): state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
-    model.load_state_dict(state_dict)
-    iter_num = checkpoint['iter_num']
-    best_val_loss = checkpoint['best_val_loss']
-elif init_from.startswith('gpt2'):
-    print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
-    # Cannot use LMA with pretrained weights
-    if use_lma: raise ValueError("Cannot initialize LMA model from standard GPT-2 weights.")
-    override_args = dict(dropout=dropout)
-    model = GPT.from_pretrained(init_from, override_args)
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = getattr(model.config, k)
-# --------------------------
+        # Calculate chunk span and gate weight
+        chunk_span = F.relu(max_t - min_t) # Span calculated using original min/max before cleaning for -1
+        chunk_gate_weight = torch.pow(self.chunk_gate_decay_rate, chunk_span.float()) # (B, L_new)
+        # Set gate to 0 if chunk is padding
+        is_chunk_pad = (min_t_clean == -1) # Check cleaned min_t
+        chunk_gate_weight = torch.where(is_chunk_pad, torch.zeros_like(chunk_gate_weight), chunk_gate_weight)
 
-# Crop block size if needed (must happen AFTER model init)
-if block_size < model.config.block_size:
-    try:
-        model.crop_block_size(block_size)
-        model_args['block_size'] = block_size # Update configuration
-    except NotImplementedError as e:
-        print(f"Warning: Could not crop block size - {e}")
+        # Apply chunk gate to the latent state z
+        z = z_nogate * chunk_gate_weight.unsqueeze(-1) # Unsqueeze to multiply feature dim
 
-model.to(device) # Move model to device
+        return z, pos_tags # Return gated z and original pos_tags
 
-# ---- Optimizer and Scaler ----
-# Determine scaler enabled status based on the effective dtype being used
-scaler_enabled = (dtype == 'float16') # Enable scaler only if using float16
-# The GradScaler API doesn't take device_type directly in newer PyTorch versions
-# It infers device from the tensors it scales.
-scaler = torch.amp.GradScaler(enabled=scaler_enabled)
-print(f"Using GradScaler: {scaler_enabled}")
+# --- Latent Attention (Uses ApproxMOC Soft Masking - No GateNet Needed Here Anymore) ---
+class LatentMetaAttention(nn.Module):
+    """
+    LMA Core Logic - Manual MHA with ApproxMOC Soft Masking based on pos_tags.
+    NO separate trainable GateNet needed here if gating happens in transform.
+    """
+    def __init__(self, config, lma_latent_config: LMAConfig):
+        super().__init__()
+        self.config = config; self.lma_config = lma_latent_config
+        self.d_latent = lma_latent_config.d_new; self.L_latent = lma_latent_config.L_new
+        self.n_head_latent = lma_latent_config.n_head_latent; self.bias = config.bias
+        self.dropout_rate = config.dropout
+        if not (self.d_latent > 0 and self.n_head_latent > 0 and self.d_latent % self.n_head_latent == 0):
+             raise ValueError(f"Invalid latent attention params: d={self.d_latent}, nH={self.n_head_latent}")
+        self.head_dim = self.d_latent // self.n_head_latent
+        print(f"  Initializing LatentMetaAttention (Manual MHA, ApproxMOC Soft Mask): Latent(L={self.L_latent}, d={self.d_latent}), Heads={self.n_head_latent}")
+        self.q_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.k_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.v_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.c_proj = nn.Linear(self.d_latent, self.d_latent, bias=self.bias)
+        self.attn_dropout = nn.Dropout(self.dropout_rate)
+        self.resid_dropout = nn.Dropout(self.dropout_rate)
+        self.approx_moc_decay_rate = 0.8 # Tunable
+        print(f"    ApproxMOC decay rate: {self.approx_moc_decay_rate}")
 
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
-if init_from == 'resume' and 'optimizer' in checkpoint: # Check if optimizer state exists
-    optimizer.load_state_dict(checkpoint['optimizer'])
-checkpoint = None # free up memory
-# -----------------------------
+    def forward(self, z, pos_tags): # Input z:(B, T_l, d_l), pos_tags:(B, T_l, 2)
+        B, T_latent, C_latent = z.size()
+        # --- Input Checks ---
+        if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in input z!"); return torch.zeros_like(z)
+        if C_latent != self.d_latent: raise ValueError(f"LatentAttention C != d_latent")
+        if pos_tags is None: raise ValueError("pos_tags required.")
+        if pos_tags.shape[:2] != (B, T_latent) or pos_tags.shape[2] != 2: raise ValueError(f"pos_tags shape mismatch.")
+        if T_latent > self.L_latent: print(f"Warning: Truncating T_latent."); z=z[:,:self.L_latent,:]; pos_tags=pos_tags[:,:self.L_latent,:]; T_latent=self.L_latent
+        # --- End Input Checks ---
 
-# ---- Compile Model (Optional) ----
-if compile:
-    # Check if device supports compile, disable if not (e.g., MPS)
-    if device_type not in ['cuda']: # Add other supported types if needed
-         print(f"Warning: Disabling torch.compile as it's not fully supported on device '{device_type}'.")
-         compile = False
-    else:
-         print("compiling the model... (takes a ~minute)")
-         unoptimized_model = model
-         try:
-             model = torch.compile(model) # requires PyTorch 2.0
-         except Exception as e:
-             print(f"Warning: Model compilation failed: {e}. Proceeding without compilation.")
-             compile = False # Fallback if compilation fails
-             model = unoptimized_model # Use the original model
-# -------------------------------
+        # --- ApproxMOC Calculation ---
+        min_t = pos_tags[:, :, 0]; max_t = pos_tags[:, :, 1]
+        query_max_t = max_t.unsqueeze(2); key_min_t = min_t.unsqueeze(1); key_max_t = max_t.unsqueeze(1)
+        approx_moc = F.relu(key_max_t - query_max_t)
+        is_query_pad = (query_max_t == -1); is_key_pad = (key_min_t == -1)
+        is_pad_involved = is_query_pad | is_key_pad
+        weights_moc = torch.pow(self.approx_moc_decay_rate, approx_moc.float())
+        weights_moc = torch.where(is_pad_involved, torch.zeros_like(weights_moc), weights_moc)
+        # --- End ApproxMOC Calculation ---
 
-# ---- Wrap model in DDP ----
-if ddp:
-    # Check for MPS incompatibility again before wrapping
-    if device_type == 'mps':
-         print("ERROR: Cannot use DDP with MPS device due to backend limitations.")
-         # Consider exiting or forcing CPU if DDP is critical
-         exit(1) # Exit if DDP+MPS requested
-    model = DDP(model, device_ids=[ddp_local_rank] if device_type == 'cuda' else None) # Only specify device_ids for CUDA
-# --------------------------
+        # --- Manual Multi-Head Attention ---
+        q = self.q_proj(z); k = self.k_proj(z); v = self.v_proj(z)
+        if torch.isnan(q).any() or torch.isnan(k).any() or torch.isnan(v).any(): print("NaN DETECTED in Q, K, V!"); return torch.zeros_like(z)
+        q_heads = q.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
+        k_heads = k.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
+        v_heads = v.view(B, T_latent, self.n_head_latent, self.head_dim).transpose(1, 2)
+        attn_scores = torch.matmul(q_heads, k_heads.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
+        if torch.isnan(attn_scores).any() or torch.isinf(attn_scores).any(): print("NaN/Inf DETECTED in attn_scores BEFORE softmax!"); return torch.zeros_like(z)
 
-# ---- Loss Estimation Function ----
+        # --- Apply Softmax and ApproxMOC Weights ---
+        attn_probs = F.softmax(attn_scores, dim=-1)
+        if torch.isnan(attn_probs).any(): print("NaN DETECTED after softmax!"); return torch.zeros_like(z)
+        # Apply ApproxMOC weights POST-Softmax
+        attn_probs = attn_probs * weights_moc.unsqueeze(1) # Unsqueeze adds head dim
+        # Renormalize
+        renorm_factor = attn_probs.sum(dim=-1, keepdim=True)
+        attn_probs = attn_probs / (renorm_factor + 1e-6)
+        if torch.isnan(attn_probs).any(): print("NaN DETECTED after weighting/renorm!"); return torch.zeros_like(z)
+        attn_probs = self.attn_dropout(attn_probs)
+        # --- End Weight Application ---
+
+        y = torch.matmul(attn_probs, v_heads)
+        if torch.isnan(y).any() or torch.isinf(y).any(): print("NaN/Inf DETECTED after attn @ v!"); return torch.zeros_like(z)
+        y = y.transpose(1, 2).contiguous().view(B, T_latent, self.d_latent)
+        y_proj = self.c_proj(y)
+        if torch.isnan(y_proj).any() or torch.isinf(y_proj).any(): print("NaN/Inf DETECTED after c_proj!"); return torch.zeros_like(z)
+        y = self.resid_dropout(y_proj)
+        if torch.isnan(y).any() or torch.isinf(y).any(): print("NaN/Inf DETECTED after resid_dropout!"); return torch.zeros_like(z)
+        return y
+
+# --- Keep LMA_Decoder (No changes needed) ---
+class LMA_Decoder(nn.Module):
+    """ Learns to map latent sequence (B, L_new, d_new) back to (B, T, d_output) """
+    def __init__(self, config: GPTConfig, lma_config: LMAConfig):
+        super().__init__()
+        self.config = config; self.lma_config = lma_config
+        self.L_new = lma_config.L_new; self.d_new = lma_config.d_new
+        self.d_output = self.d_new; self.bias = config.bias; self.dropout = config.dropout
+        print(f" Init LMA Decoder: In(L_new={self.L_new}, d_new={self.d_new}) -> Out(T, d_output={self.d_output})")
+        self.ln = LayerNorm(self.d_new, bias=self.bias)
+        hidden_dim = self.d_new * 2
+        self.fc1 = nn.Linear(self.d_new, hidden_dim, bias=self.bias); self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_dim, self.d_output, bias=self.bias); self.drop = nn.Dropout(self.dropout)
+    def forward(self, z, target_T): # z shape: (B, L_new, d_new)
+        B, current_L_new, current_d_new = z.shape
+        if current_L_new != self.L_new: print(f"Warning: LMA_Decoder L_new mismatch.")
+        if current_d_new != self.d_new: raise ValueError(f"LMA_Decoder d mismatch")
+        if torch.isnan(z).any() or torch.isinf(z).any(): print("NaN/Inf DETECTED in LMA_Decoder input!"); return torch.zeros(B, target_T, self.d_output, device=z.device, dtype=z.dtype)
+        z_permuted = z.permute(0, 2, 1)
+        try: z_interpolated = F.interpolate(z_permuted, size=target_T, mode='linear', align_corners=False)
+        except Exception as e: print(f"ERROR during interpolate: {e}"); raise e
+        z_upsampled = z_interpolated.permute(0, 2, 1)
+        if torch.isnan(z_upsampled).any() or torch.isinf(z_upsampled).any(): print("NaN/Inf DETECTED AFTER interpolation!"); return torch.zeros_like(z_upsampled)
+        z_norm = self.ln(z_upsampled); z_hidden = self.act(self.fc1(z_norm)); z_refined = self.fc2(z_hidden)
+        z_output = self.drop(z_refined)
+        if self.d_output == self.d_new: z_output = z_upsampled + z_output
+        if torch.isnan(z_output).any() or torch.isinf(z_output).any(): print("NaN/Inf DETECTED in LMA_Decoder output!"); return torch.zeros_like(z_output)
+        return z_output
+
+# --- Keep CausalSelfAttention (No changes needed) ---
+class CausalSelfAttention(nn.Module):
+    """ Standard MHA implementation """
+    def __init__(self, config):
+        super().__init__(); assert config.n_embd % config.n_head == 0
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.attn_dropout = nn.Dropout(config.dropout); self.resid_dropout = nn.Dropout(config.dropout)
+        self.n_head = config.n_head; self.n_embd = config.n_embd; self.dropout = config.dropout
+        self.flash = hasattr(F, 'scaled_dot_product_attention') and self.dropout == 0.0
+        if not self.flash: print("WARNING: using slow attention."); mask = torch.tril(torch.ones(config.block_size, config.block_size)); self.register_buffer("bias", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
+        else: print("Using Flash Attention."); self.register_buffer("bias", None, persistent=False)
+    def forward(self, x):
+        B, T, C = x.size();
+        if C != self.n_embd: raise ValueError(f"CausalSelfAttention C mismatch")
+        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        if self.flash: y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
+        else:
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            if self.bias is None: raise RuntimeError("Slow attention requires bias buffer")
+            slice_T = min(T, self.bias.size(-1))
+            att = att.masked_fill(self.bias[:,:,:slice_T,:slice_T] == 0, float('-inf'))
+            att = F.softmax(att, dim=-1); att = self.attn_dropout(att); y = att @ v
+        y = y.transpose(1, 2).contiguous().view(B, T, C); y = self.resid_dropout(self.c_proj(y)); return y
+
+# --- Keep MLP (No changes needed) ---
+class MLP(nn.Module):
+    def __init__(self, config, block_internal_dim):
+        super().__init__(); self.input_dim = block_internal_dim; hidden_dim = 4 * self.input_dim
+        self.c_fc = nn.Linear(self.input_dim, hidden_dim, bias=config.bias); self.gelu = nn.GELU()
+        self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias); self.dropout = nn.Dropout(config.dropout)
+    def forward(self, x):
+        if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim mismatch"); x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
+
+# --- Keep GPTConfig (No changes needed) ---
+@dataclass
+class GPTConfig:
+    block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12
+    n_head: int = 12; n_embd: int = 768; dropout: float = 0.0
+    bias: bool = True; use_lma: bool = False; lma_reduction_factor: int = 2
+
+# --- Keep Block (Modified for pos_tags pass-through - no new changes) ---
+class Block(nn.Module):
+    """ Transformer Block: Modified to handle pos_tags for LMA """
+    def __init__(self, config: GPTConfig, is_lma: bool, lma_config: LMAConfig = None):
+        super().__init__()
+        self.use_lma = is_lma
+        if self.use_lma:
+            if lma_config is None: raise ValueError("lma_config needed for LMA Block")
+            self.operating_dim = lma_config.d_new; self.operating_L = lma_config.L_new
+            print(f"Initializing Block {id(self)} (LMA): Dim={self.operating_dim}, MaxL={self.operating_L}")
+            self.attn = LatentMetaAttention(config, lma_config)
+        else:
+            self.operating_dim = config.n_embd; self.operating_L = config.block_size
+            print(f"Initializing Block {id(self)} (MHA): Dim={self.operating_dim}, MaxL={self.operating_L}")
+            self.attn = CausalSelfAttention(config)
+        self.ln_1 = LayerNorm(self.operating_dim, bias=config.bias)
+        self.mlp = MLP(config, self.operating_dim)
+        self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
+
+    def forward(self, x, pos_tags=None): # Accept optional pos_tags
+        B, T_current, C_current = x.shape
+        if C_current != self.operating_dim: raise ValueError(f"Block C mismatch")
+        x_norm1 = self.ln_1(x)
+        if self.use_lma:
+            if pos_tags is None: raise ValueError("LMA Block requires pos_tags.")
+            attn_output = self.attn(x_norm1, pos_tags) # Pass pos_tags
+        else:
+            attn_output = self.attn(x_norm1)
+        x = x + attn_output
+        x_norm2 = self.ln_2(x)
+        mlp_output = self.mlp(x_norm2)
+        x = x + mlp_output
+        return x, pos_tags # Return data and pass pos_tags through
+
+# --- Keep GPT __init__ (No new changes needed) ---
+class GPT(nn.Module):
+    def __init__(self, config: GPTConfig):
+        super().__init__(); assert config.vocab_size is not None; assert config.block_size is not None
+        self.config = config
+        if config.use_lma:
+             if config.n_embd % config.n_head != 0: raise ValueError(f"LMA n_embd/n_head mismatch.")
+             if config.lma_reduction_factor <= 0: raise ValueError(f"LMA reduction_factor must be > 0.")
+        self.transformer = nn.ModuleDict(dict( wte = nn.Embedding(config.vocab_size, config.n_embd), wpe = nn.Embedding(config.block_size, config.n_embd), drop = nn.Dropout(config.dropout), ))
+        self.initial_lma_transform = None; self.lma_decoder = None; self.initial_lma_cfg = None
+        current_d = config.n_embd; current_L = config.block_size; self.operates_in_latent = False
+        if config.use_lma:
+            print("--- Configuring LMA: Initial Transformation ---"); self.operates_in_latent = True
+            reduction_factor = max(1, config.lma_reduction_factor); target_l_new_init = config.block_size // reduction_factor
+            target_d_new_init = config.n_embd // reduction_factor; target_l_new_init = max(1, target_l_new_init); target_d_new_init = max(1, target_d_new_init)
+            latent_n_head = config.n_head
+            if target_d_new_init == 0: raise ValueError("Initial LMA target_d_new is zero.")
+            if target_d_new_init % latent_n_head != 0:
+                original_target_d = target_d_new_init; target_d_new_init = max(latent_n_head, (target_d_new_init // latent_n_head) * latent_n_head)
+                if target_d_new_init == 0: target_d_new_init = latent_n_head; print(f"LMA Init: Adjusted d_new {original_target_d} -> {target_d_new_init}")
+            try:
+                self.initial_lma_cfg = LMAConfig( d0=config.n_embd, L=config.block_size, n_head_stacking=config.n_head, target_L_new=target_l_new_init, d_new=target_d_new_init, n_head_latent=latent_n_head )
+                self.initial_lma_transform = LMA_InitialTransform(config, self.initial_lma_cfg); current_L = self.initial_lma_cfg.L_new; current_d = self.initial_lma_cfg.d_new
+                print(f"--- Dimensions into Blocks: Latent L={current_L}, Latent D={current_d} ---")
+            except ValueError as e: print(f"ERROR configuring Initial LMA Transform: {e}"); raise e
+        print(f"--- Building {config.n_layer} Transformer Blocks ---"); blocks = []
+        for i in range(config.n_layer):
+            is_lma_block = self.operates_in_latent; block_lma_config = None
+            if is_lma_block:
+                if self.initial_lma_cfg is None: raise RuntimeError("LMA config error.")
+                block_lma_config = LMAConfig( d0=current_d, L=current_L, n_head_stacking=config.n_head, target_L_new=current_L, d_new=current_d, n_head_latent=self.initial_lma_cfg.n_head_latent )
+                block = Block(config, is_lma=True, lma_config=block_lma_config)
+            else: block = Block(config, is_lma=False)
+            blocks.append(block)
+        self.transformer['h'] = nn.ModuleList(blocks)
+        self.final_ln_lm_head_dim = current_d
+        if self.operates_in_latent:
+            if self.initial_lma_cfg is None: raise RuntimeError("LMA config error.")
+            print("--- Configuring LMA: Decoder ---"); self.lma_decoder = LMA_Decoder(config, self.initial_lma_cfg)
+            self.final_ln_lm_head_dim = self.lma_decoder.d_output; print(f"--- Dimension after Decoder: {self.final_ln_lm_head_dim} ---")
+        self.transformer['ln_f'] = LayerNorm(self.final_ln_lm_head_dim, bias=config.bias)
+        self.lm_head = nn.Linear(self.final_ln_lm_head_dim, config.vocab_size, bias=False); print(f"--- Final LN & LM Head on dim: {self.final_ln_lm_head_dim} ---")
+        print(f"DEBUG: Checking weight tying. Final Dim = {self.final_ln_lm_head_dim}, n_embd = {self.config.n_embd}, use_lma = {config.use_lma}")
+        if not config.use_lma and self.final_ln_lm_head_dim == config.n_embd: self.transformer.wte.weight = self.lm_head.weight; print("Weight tying enabled.")
+        else: reason = "LMA is used" if config.use_lma else f"dim mismatch"; print(f"Weight tying disabled ({reason}).")
+        print(f"DEBUG: Are lm_head/wte weights same object? {self.lm_head.weight is self.transformer.wte.weight}")
+        self.apply(self._init_weights);
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'): torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+        print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+    def get_num_params(self, non_embedding=True): n_params=sum(p.numel() for p in self.parameters()); if non_embedding: n_params -= self.transformer.wpe.weight.numel(); return n_params
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02);
+        if module.bias is not None: torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, LayerNorm):
+             if module.bias is not None: torch.nn.init.zeros_(module.bias)
+    def forward(self, idx, targets=None): # Same forward as before, handles pos_tags tuple
+        device = idx.device; b, t = idx.size()
+        if t > self.config.block_size: idx = idx[:, -self.config.block_size:]; t = self.config.block_size;
+        if targets is not None and targets.shape[1] > self.config.block_size: targets = targets[:, -self.config.block_size:]
+        pos = torch.arange(0, t, dtype=torch.long, device=device); tok_emb = self.transformer.wte(idx); pos_emb = self.transformer.wpe(pos)
+        x = self.transformer.drop(tok_emb + pos_emb); original_T = t; pos_tags = None
+        if self.initial_lma_transform is not None: x, pos_tags = self.initial_lma_transform(x)
+        for block in self.transformer.h: x, pos_tags = block(x, pos_tags=pos_tags)
+        if self.lma_decoder is not None: x = self.lma_decoder(x, original_T)
+        x = self.transformer.ln_f(x); logits = self.lm_head(x); loss = None
+        if targets is not None: loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+        return logits, loss
+    def crop_block_size(self, block_size): raise NotImplementedError("LMA block size cropping not supported.")
+    @classmethod
+    def from_pretrained(cls, model_type, override_args=None): raise NotImplementedError("Loading pretrained LMA models not supported.")
+    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type): # Same as before
+        param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}; decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]; nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_groups = [{'params': decay_params, 'weight_decay': weight_decay}, {'params': nodecay_params, 'weight_decay': 0.0}]
+        num_decay_params = sum(p.numel() for p in decay_params); num_nodecay_params = sum(p.numel() for p in nodecay_params); print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters"); print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters; use_fused = fused_available and device_type.startswith('cuda'); extra_args = dict(fused=True) if use_fused else dict(); optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args); print(f"using fused AdamW: {use_fused}"); return optimizer
+    def estimate_mfu(self, fwdbwd_per_iter, dt): # Same as before
+        N = self.get_num_params(); cfg = self.config; L, H, Q, T = cfg.n_layer, cfg.n_head, cfg.n_embd//cfg.n_head, cfg.block_size; flops_per_token = 6*N + 12*L*H*Q*T; flops_per_fwdbwd = flops_per_token * T; flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter; flops_achieved = flops_per_iter * (1.0/dt); flops_promised = 312e12; mfu = flops_achieved / flops_promised; print("WARNING: MFU estimate based on standard MHA."); adjustment_factor = 0.8; return mfu * adjustment_factor
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None): # Same as before
+        self.eval();
+        for _ in range(max_new_tokens):
+            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]; logits, _ = self(idx_cond)
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None: v, _ = torch.topk(logits, min(top_k, logits.size(-1))); logits[logits < v[:, [-1]]] = -float('Inf')
+            probs = F.softmax(logits, dim=-1); idx_next = torch.multinomial(probs, num_samples=1); idx = torch.cat((idx, idx_next), dim=1)
+        self.train(); return idx
+
+# --- Keep HellaSwag evaluation logic (get_most_likely_row, evaluate_hellaswag) - No changes needed ---
+def get_most_likely_row(tokens, mask, logits):
+    if logits.shape[1] <= 1: print(f"Warning (get_most_likely_row): Logits seq len <= 1."); return 0
+    shift_logits = logits[..., :-1, :].contiguous(); shift_tokens = tokens[..., 1:].contiguous()
+    if shift_logits.shape[1] == 0 or shift_tokens.shape[1] == 0: print(f"Warning: shift_logits or shift_tokens empty."); return 0
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1)); flat_shift_tokens = shift_tokens.view(-1)
+    if flat_shift_logits.shape[0] != flat_shift_tokens.shape[0]: print(f"ERROR (get_most_likely_row): Size mismatch! Logits flat: {flat_shift_logits.shape[0]}, Tokens flat: {flat_shift_tokens.shape[0]}"); return 0
+    try: shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
+    except Exception as e: print(f"ERROR during CE in get_most_likely_row: {e}"); return 0
+    shift_losses = shift_losses.view(tokens.size(0), -1); shift_mask = mask[..., 1:].contiguous()
+    masked_shift_losses = shift_losses * shift_mask; sum_loss = masked_shift_losses.sum(dim=1); num_loss_tokens = shift_mask.sum(dim=1)
+    avg_loss = sum_loss / (num_loss_tokens + 1e-6); avg_loss[num_loss_tokens == 0] = float('inf'); pred_norm = avg_loss.argmin().item(); return pred_norm
+
 @torch.no_grad()
-# Remove ctx from signature
-def estimate_loss(model):
-    out = {}
-    # model should be passed in eval mode
-    model_device = next(model.parameters()).device
-    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+    assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding"
+    print(f"Evaluating HellaSwag from {hellaswag_path}..."); num_correct_norm = 0; num_total = 0
+    if not os.path.exists(hellaswag_path):
+        print(f"Error: HS file not found: {hellaswag_path}"); data_dir = os.path.dirname(hellaswag_path)
+        if not os.path.exists(data_dir): os.makedirs(data_dir); val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
+        print(f"Attempting download from {val_url}..."); import requests
+        try:
+            with requests.get(val_url, stream=True) as r: r.raise_for_status();
+            with open(hellaswag_path, 'wb') as f: [f.write(chunk) for chunk in r.iter_content(chunk_size=8192)]
+            print("Download successful.")
+        except Exception as e: print(f"Download failed: {e}. Cannot eval."); return -1.0
+    model_device = next(model.parameters()).device; device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+    eval_ctx = nullcontext();
+    if device_type == 'cuda': print("DEBUG: Using torch.float32 context for HellaSwag model call."); eval_dtype = torch.float32; eval_ctx = torch.amp.autocast(device_type=device_type, dtype=eval_dtype)
+    try:
+        with open(hellaswag_path, 'r') as f:
+            for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
+                example = json.loads(line); num_total += 1; ctx = example['ctx']; label = example['label']; endings = example['endings']
+                ctx_tokens = enc.encode(ctx);
+                if not ctx_tokens: print(f"Warning: Skipping empty context."); num_total -=1; continue
+                tok_rows = []; mask_rows = []
+                for end in endings:
+                    completion_tokens = enc.encode(end); tok = ctx_tokens + completion_tokens; mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
+                    if len(tok) > model.config.block_size:
+                        num_comp = len(completion_tokens); max_ctx = model.config.block_size - num_comp
+                        if max_ctx < 0: completion_tokens=completion_tokens[:model.config.block_size]; tok=completion_tokens; mask=[1]*len(tok); max_ctx=0
+                        start_idx = max(0, len(ctx_tokens)-max_ctx); trunc_ctx = ctx_tokens[start_idx:]
+                        tok = trunc_ctx + completion_tokens; mask = [0]*len(trunc_ctx) + [1]*len(completion_tokens)
+                        if len(tok) > model.config.block_size: tok = tok[-model.config.block_size:]; mask = mask[-model.config.block_size:]
+                    if len(tok) <= 1: tok=tok+[0]*(2-len(tok)); mask=mask+[0]*(2-len(mask))
+                    tok=tok[:model.config.block_size]; mask=mask[:model.config.block_size]
+                    tok_rows.append(torch.tensor(tok,dtype=torch.long)); mask_rows.append(torch.tensor(mask,dtype=torch.long))
+                if not tok_rows: continue
+                max_len = max(len(r) for r in tok_rows);
+                if max_len <= 1: max_len = 2
+                tokens=torch.zeros((len(tok_rows),max_len),dtype=torch.long); mask_t=torch.zeros((len(tok_rows),max_len),dtype=torch.long) # Renamed mask tensor here
+                for i, (tr, mr) in enumerate(zip(tok_rows, mask_rows)): tokens[i,:len(tr)]=tr; mask_t[i,:len(mr)]=mr # Use mask_t
+                tokens=tokens.to(model_device); mask_t=mask_t.to(model_device) # Use mask_t
+                model.eval();
+                with eval_ctx: logits, _ = model(tokens)
+                if torch.isnan(logits).any() or torch.isinf(logits).any(): print(f"ERROR: NaNs/Infs in HS logits!"); pred_norm = 0
+                else:
+                    try: pred_norm = get_most_likely_row(tokens, mask_t, logits) # Pass mask_t
+                    except Exception as e: print(f"ERROR in get_most_likely_row: {e}"); import traceback; traceback.print_exc(); pred_norm = 0
+                if pred_norm == label: num_correct_norm += 1
+    except FileNotFoundError: print(f"Error: HS file not found: {hellaswag_path}"); return -1.0
+    except Exception as e: print(f"Error during HS eval loop: {e}"); import traceback; traceback.print_exc(); return -1.0
+    acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0; print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})"); return acc_norm
 
-    # ---- Determine autocast context INSIDE the function ----
-    # Use the same dtype logic as in the main script training part
-    if device_type == 'cuda':
-        # Use the global 'dtype' variable ('bfloat16' or 'float16')
-        # Ensure 'dtype' variable is accessible here or pass it in if needed
-        global dtype # Access the global dtype setting
-        ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-    else: # CPU or MPS
-        eval_ctx = nullcontext()
-    # ---- End context determination ----
-
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters, device=model_device) # Use model's device
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            # Move batch data explicitly to model's device
-            X, Y = X.to(model_device), Y.to(model_device)
-            with eval_ctx: # Use locally determined context
-                logits, loss = model(X, Y)
-            if loss is not None and not torch.isnan(loss): losses[k] = loss.item()
-            else: losses[k] = float('nan')
-        valid_losses = losses[~torch.isnan(losses)]
-        out[split] = valid_losses.mean() if len(valid_losses) > 0 else float('inf')
-
-    if hellaswag and master_process:
-        eval_model = model.module if ddp else model
-        # evaluate_hellaswag now determines its own context
-        hellaswag_acc = evaluate_hellaswag(eval_model, enc, hellaswag_path) # Pass path only
-        out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0
-    elif hellaswag:
-         out['hellaswag'] = 0.0
-
-    return out
-# -----------------------------
-
-# ---- LR Scheduler ----
-def get_lr(it):
-    if not decay_lr: return learning_rate # Return fixed LR if decay is off
-    if it < warmup_iters: return learning_rate * (it + 1) / (warmup_iters + 1)
-    if it > lr_decay_iters: return min_lr
-    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters); assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)); return min_lr + coeff * (learning_rate - min_lr)
-# --------------------
-
-# ---- Logging Setup ----
-if wandb_log and master_process:
-    import wandb
-    # Ensure config passed to wandb includes LMA settings if used
-    run_config = config.copy()
-    if use_lma: # Check the global flag from config
-         # Try to get LMA specifics from model config if available
-         if hasattr(model.module if ddp else model, 'config') and hasattr(model.module if ddp else model, 'lma_config_internal'):
-              # This assumes GPT stores the initial LMAConfig as 'lma_config_internal'
-              # If not, get from the first block's lma_config
-              try:
-                   first_block = (model.module if ddp else model).transformer.h[0]
-                   if hasattr(first_block, 'attn') and hasattr(first_block.attn, 'lma_config'):
-                        lma_conf_instance = first_block.attn.lma_config
-                        run_config.update({f"lma_{k}": v for k, v in lma_conf_instance.__dict__.items() if not k.startswith('_')})
-              except Exception as e:
-                   print(f"Warning: Could not retrieve detailed LMA config for wandb: {e}")
-         else: # Fallback using global config values
-              run_config['use_lma'] = use_lma
-              run_config['lma_reduction_factor'] = lma_reduction_factor
-              run_config['lma_L_new'] = 'N/A' # Placeholder, actual L_new is dynamic/adjusted
-              run_config['lma_d_new'] = 'N/A' # Placeholder
-    wandb.init(project=wandb_project, name=wandb_run_name, config=run_config)
-# -----------------------
-
-# ---- Training Loop ----
-X, Y = get_batch('train') # Fetch first batch
-t0 = time.time()
-local_iter_num = 0
-raw_model = model.module if ddp else model # unwrap DDP
-running_mfu = -1.0
-print("\nStarting training loop...")
-while True:
-
-    # Determine and set LR
-    lr = get_lr(iter_num) if decay_lr else learning_rate
-    for param_group in optimizer.param_groups: param_group['lr'] = lr
-
-    # Evaluate loss and save checkpoints
-    if iter_num % eval_interval == 0 and master_process:
-        # Set model to eval mode before estimating loss
-        model.eval()
-        # --- Add Debug Print ---
-        print(f"DEBUG: Type of ctx BEFORE calling estimate_loss: {type(ctx)}")
-        print(f"DEBUG: Does ctx have __enter__? {'__enter__' in dir(ctx)}")
-        # --- End Debug Print ---
-        losses = estimate_loss(model)
-        model.train() # Set back to train mode after evaluation
-        print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
-        if hellaswag: print_str += f", HellaSwag Acc: {losses.get('hellaswag', -1):.4f}"
-        print(print_str)
-
-        if wandb_log:
-            log_data = { "iter": iter_num, "train/loss": losses.get('train', float('nan')), "val/loss": losses.get('val', float('nan')), "lr": lr, "mfu": running_mfu*100 }
-            if hellaswag and 'hellaswag' in losses: log_data['val/hellaswag_acc'] = losses['hellaswag']
-            wandb.log(log_data)
-
-        current_val_loss = losses.get('val', float('inf')) # Handle case where val loss might be NaN/missing
-        if current_val_loss < best_val_loss or always_save_checkpoint:
-            best_val_loss = current_val_loss if current_val_loss != float('inf') else best_val_loss # Only update if valid
-            if iter_num > 0:
-                checkpoint = { 'model': raw_model.state_dict(), 'optimizer': optimizer.state_dict(), 'model_args': model_args, 'iter_num': iter_num, 'best_val_loss': best_val_loss, 'config': config }
-                print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
-    if iter_num == 0 and eval_only: break
-
-    # Forward backward update with gradient accumulation
-    for micro_step in range(gradient_accumulation_steps):
-        if ddp: model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
-        with ctx:
-            logits, loss = model(X, Y)
-            # Check for NaN loss immediately
-            if torch.isnan(loss):
-                 print(f"ERROR: Loss is NaN at iter {iter_num}, micro_step {micro_step}. Stopping.")
-                 exit(1) # Stop training if loss becomes NaN
-            loss = loss / gradient_accumulation_steps # Scale loss
-        # Prefetch next batch
-        X, Y = get_batch('train')
-        # Backward pass
-        scaler.scale(loss).backward() # Use scaler for backward
-
-    # Gradient Clipping
-    if grad_clip != 0.0:
-        scaler.unscale_(optimizer) # Unscale before clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
-    # Optimizer Step
-    scaler.step(optimizer)
-    scaler.update()
-    optimizer.zero_grad(set_to_none=True)
-
-    # Timing and Logging
-    t1 = time.time(); dt = t1 - t0; t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        lossf = loss.item() * gradient_accumulation_steps # Approx total loss
-        if local_iter_num >= 5: # MFU warmup
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-
-    iter_num += 1; local_iter_num += 1
-    if iter_num > max_iters: break
-# ---------------------
-
-# ---- Cleanup ----
-if ddp:
-    destroy_process_group()
-# ---------------
-
-print("Training finished.")
+# --- Keep Example Usage __main__ block (No changes needed) ---
+if __name__ == '__main__':
+    # ... (config_args setup) ...
+    gpt_config = GPTConfig(**config_args)
+    print("\n--- Model Configuration ---"); print(gpt_config)
+    print("\n--- Initializing Model ---"); model = GPT(gpt_config)
+    # ... (Testing code as before) ...
+    print("\n--- Testing Forward/Backward Pass ---")
+    B = 4; T = gpt_config.block_size; T_short = T // 2
+    dummy_input_full = torch.randint(0, gpt_config.vocab_size, (B, T)); dummy_targets_full = torch.randint(0, gpt_config.vocab_size, (B, T))
+    dummy_input_short = torch.randint(0, gpt_config.vocab_size, (B, T_short)); dummy_targets_short = torch.randint(0, gpt_config.vocab_size, (B, T_short))
+    if torch.cuda.is_available(): device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built(): device = 'mps' if "RANK" not in os.environ else 'cpu'
+    else: device = 'cpu'
+    print(f"Using device: {device}"); model.to(device)
+    optimizer = model.configure_optimizers(weight_decay=1e-1, learning_rate=1e-4, betas=(0.9, 0.95), device_type=device)
+    for seq_len_label, dummy_input, dummy_targets in [ (f"T = {T}", dummy_input_full, dummy_targets_full), (f"T = {T_short}", dummy_input_short, dummy_targets_short) ]:
+        print(f"\nTesting with {seq_len_label}...")
+        dummy_input = dummy_input.to(device); dummy_targets = dummy_targets.to(device)
+        try:
+            model.train(); optimizer.zero_grad()
+            logits, loss = model(dummy_input, dummy_targets)
+            print("Forward pass successful!"); print(f"  Logits shape: {logits.shape}")
+            if loss is not None: print(f"  Loss: {loss.item()}"); loss.backward(); optimizer.step(); print("Backward pass successful!")
+            else: print("  Loss is None.")
+        except Exception as e: print(f"\n !!! Error FWD/BWD ({seq_len_label}) !!!"); print(e); import traceback; traceback.print_exc()
+    print("\n--- Testing Generation ---")
+    try:
+        start_ids = torch.randint(0, gpt_config.vocab_size, (1, 10), device=device); model.eval()
+        generated_ids = model.generate(start_ids, max_new_tokens=20, temperature=0.8, top_k=5)
+        print("Generation successful!"); print(f"  Input shape: {start_ids.shape}"); print(f"  Generated shape: {generated_ids.shape}")
+    except Exception as e: print("\n !!! Error Generation !!!"); print(e); import traceback; traceback.print_exc()
+    print("\n--- Testing HellaSwag ---")
+    try:
+        import tiktoken; enc = tiktoken.get_encoding("gpt2")
+        hs_path = os.path.join('data', 'hellaswag', 'hellaswag_val.jsonl')
+        accuracy = evaluate_hellaswag(model, enc, hs_path)
+        print(f"HellaSwag eval finished. Accuracy: {accuracy:.4f}")
+    except ImportError: print("tiktoken not installed, skipping HellaSwag.")
+    except Exception as e: print(f"\n !!! Error HellaSwag !!!"); print(e); import traceback; traceback.print_exc()
