@@ -43,6 +43,13 @@ def find_closest_divisor(total_value, target_divisor, max_delta=100):
 # Core Model Components
 # -----------------------------------------------------------------------------
 
+# --- Keep GPTConfig (No changes needed) ---
+@dataclass
+class GPTConfig:
+    block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12
+    n_head: int = 12; n_embd: int = 768; dropout: float = 0.0
+    bias: bool = True; use_lma: bool = False; lma_reduction_factor: int = 2
+    
 class LayerNorm(nn.Module):
     """ LayerNorm with optional bias. """
     def __init__(self, ndim, bias):
@@ -306,13 +313,6 @@ class MLP(nn.Module):
         self.c_proj = nn.Linear(hidden_dim, self.input_dim, bias=config.bias); self.dropout = nn.Dropout(config.dropout)
     def forward(self, x):
         if x.size(-1) != self.input_dim: raise ValueError(f"MLP input dim mismatch"); x = self.c_fc(x); x = self.gelu(x); x = self.c_proj(x); x = self.dropout(x); return x
-
-# --- Keep GPTConfig (No changes needed) ---
-@dataclass
-class GPTConfig:
-    block_size: int = 1024; vocab_size: int = 50304; n_layer: int = 12
-    n_head: int = 12; n_embd: int = 768; dropout: float = 0.0
-    bias: bool = True; use_lma: bool = False; lma_reduction_factor: int = 2
 
 # --- Keep Block (Modified for pos_tags pass-through - no new changes) ---
 class Block(nn.Module):
