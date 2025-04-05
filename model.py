@@ -157,21 +157,25 @@ class LMA_InitialTransform(nn.Module):
         pos_for_max = torch.where(pos_rechunked == -1, max_val_replace, pos_rechunked)
         min_t = torch.min(pos_for_min, dim=2)[0] # (B, L_new)
         max_t = torch.max(pos_for_max, dim=2)[0] # (B, L_new)
-        min_t_clean = torch.where(min_t == min_val_replace, -1, min_t)
-        max_t_clean = torch.where(max_t == max_val_replace, -1, max_t_clean) # Use max_t_clean here
+
+        # If a latent position only contained padding, min will be T and max will be -1. Reset these.
+        min_t_clean = torch.where(min_t == min_val_replace, -1, min_t) # Correctly uses min_t if condition is false
+        max_t_clean = torch.where(max_t == max_val_replace, -1, max_t)      # Correct: Use max_t if condition is false
+
+        # Stack min and max tags
         pos_tags = torch.stack([min_t_clean, max_t_clean], dim=2) # Shape: (B, L_new, 2)
 
-        # Calculate chunk span and gate weight
-        chunk_span = F.relu(max_t - min_t) # Span calculated using original min/max before cleaning for -1
+        # ... (Calculate chunk gate using max_t, min_t before cleaning) ...
+        chunk_span = F.relu(max_t - min_t) # Use original min/max for span calculation
         chunk_gate_weight = torch.pow(self.chunk_gate_decay_rate, chunk_span.float()) # (B, L_new)
-        # Set gate to 0 if chunk is padding
+        # Set gate to 0 if chunk is padding (use cleaned min_t to detect padding)
         is_chunk_pad = (min_t_clean == -1) # Check cleaned min_t
         chunk_gate_weight = torch.where(is_chunk_pad, torch.zeros_like(chunk_gate_weight), chunk_gate_weight)
 
         # Apply chunk gate to the latent state z
         z = z_nogate * chunk_gate_weight.unsqueeze(-1) # Unsqueeze to multiply feature dim
 
-        return z, pos_tags # Return gated z and original pos_tags
+        return z, pos_tags # Return gated z and cleaned pos_tags
 
 # --- Latent Attention (Uses ApproxMOC Soft Masking - No GateNet Needed Here Anymore) ---
 class LatentMetaAttention(nn.Module):
