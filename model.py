@@ -559,247 +559,70 @@ class GPT(nn.Module):
         return idx
 
 # --- HellaSwag evaluation logic (Unchanged, should work fine) ---
-def get_most_likely_row(tokens, mask, logits, debug_print=False): # Add debug_print flag
-    """ Given tokens, mask, and logits, find the index of the row with the lowest average loss. """
-    if logits.shape[1] <= 1:
-        # Cannot compute loss on sequence of length 1 or less
-        return 0
-
-    # Shift logits and tokens for next token prediction loss
-    shift_logits = logits[..., :-1, :].contiguous() # Predict T based on T-1
-    shift_tokens = tokens[..., 1:].contiguous()     # Actual token at T
-
-    # Ensure dimensions are compatible after shifting
-    if shift_logits.shape[1] == 0 or shift_tokens.shape[1] == 0:
-        # This can happen if the original sequence length was 1
-        return 0
-
-    # Calculate cross-entropy loss for each token position
-    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1))
-    flat_shift_tokens = shift_tokens.view(-1)
-
-    # Check for shape mismatch before calculating loss
-    if flat_shift_logits.shape[0] != flat_shift_tokens.shape[0]:
-         print(f"ERROR (get_most_likely_row): Size mismatch before loss calculation! Logits: {flat_shift_logits.shape}, Tokens: {flat_shift_tokens.shape}")
-         # Potentially caused by incorrect padding or slicing earlier
-         return 0 # Cannot proceed
-
-    try:
-        # Compute loss per token, don't reduce yet
-        shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
-    except Exception as e:
-        print(f"ERROR during CE in get_most_likely_row: {e}")
-        # Print shapes for debugging
-        print(f"  Logits shape: {flat_shift_logits.shape}, Tokens shape: {flat_shift_tokens.shape}")
-        return 0 # Return a default index on error
-
-    # Reshape losses to (batch_size, sequence_length - 1)
-    shift_losses = shift_losses.view(tokens.size(0), -1)
-
-    # Create a mask for the shifted losses (ignore loss where mask is 0)
-    shift_mask = mask[..., 1:].contiguous() # Mask corresponds to shift_tokens
-
-    # Apply the mask (zero out losses for padding tokens or context tokens)
-    masked_shift_losses = shift_losses * shift_mask
-
-    # Sum the loss for each row (completion)
-    sum_loss = masked_shift_losses.sum(dim=1)
-
-    # Count the number of tokens contributing to the loss in each row
-    num_loss_tokens = shift_mask.sum(dim=1)
-
-    # Calculate average loss per row, handle division by zero if a row had no valid tokens
-    avg_loss = sum_loss / (num_loss_tokens + 1e-6) # Add epsilon for stability
-    avg_loss[num_loss_tokens == 0] = float('inf') # Assign infinite loss if no tokens were considered
-
-    # --- Add Debug Print for Losses ---
-    if debug_print:
-        print(f"DEBUG: HellaSwag avg_loss values for first example: {avg_loss.tolist()}")
-    # --- End Debug Print ---
-
-    # Find the row index with the minimum average loss
-    pred_norm = avg_loss.argmin().item()
-    return pred_norm
+def get_most_likely_row(tokens, mask, logits):
+    if logits.shape[1] <= 1: print(f"Warning (get_most_likely_row): Logits seq len <= 1."); return 0
+    shift_logits = logits[..., :-1, :].contiguous(); shift_tokens = tokens[..., 1:].contiguous()
+    if shift_logits.shape[1] == 0 or shift_tokens.shape[1] == 0: print(f"Warning: shift_logits or shift_tokens empty."); return 0
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1)); flat_shift_tokens = shift_tokens.view(-1)
+    if flat_shift_logits.shape[0] != flat_shift_tokens.shape[0]: print(f"ERROR (get_most_likely_row): Size mismatch! Logits flat: {flat_shift_logits.shape[0]}, Tokens flat: {flat_shift_tokens.shape[0]}"); return 0
+    try: shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
+    except Exception as e: print(f"ERROR during CE in get_most_likely_row: {e}"); return 0
+    shift_losses = shift_losses.view(tokens.size(0), -1); shift_mask = mask[..., 1:].contiguous()
+    masked_shift_losses = shift_losses * shift_mask; sum_loss = masked_shift_losses.sum(dim=1); num_loss_tokens = shift_mask.sum(dim=1)
+    avg_loss = sum_loss / (num_loss_tokens + 1e-6); avg_loss[num_loss_tokens == 0] = float('inf'); pred_norm = avg_loss.argmin().item(); return pred_norm
 
 
 @torch.no_grad()
-def evaluate_hellaswag(model: 'GPT', enc: Encoding, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
-    """ Evaluates the model performance on the HellaSwag dataset. """
-    assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding object"
-    print(f"Evaluating HellaSwag from {hellaswag_path}...")
-    num_correct_norm = 0
-    num_total = 0
-
-    # Attempt to download HellaSwag validation set if not found
+def evaluate_hellaswag(model, enc, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+    assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding"
+    print(f"Evaluating HellaSwag from {hellaswag_path}..."); num_correct_norm = 0; num_total = 0
     if not os.path.exists(hellaswag_path):
-        print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
-        data_dir = os.path.dirname(hellaswag_path) or '.' # Use current dir if path has no dirname
-        if not os.path.exists(data_dir):
-            try:
-                os.makedirs(data_dir)
-            except OSError as e:
-                print(f"Error creating directory {data_dir}: {e}")
-                return -1.0 # Cannot proceed if directory creation fails
-
-        val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
-        print(f"Attempting download from {val_url}...")
-        # import requests # Moved import inside function
+        print(f"Error: HS file not found: {hellaswag_path}"); data_dir = os.path.dirname(hellaswag_path)
+        if not os.path.exists(data_dir): os.makedirs(data_dir); val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
+        print(f"Attempting download from {val_url}..."); import requests
         try:
-            with requests.get(val_url, stream=True) as r:
-                r.raise_for_status() # Raise an exception for bad status codes
-                with open(hellaswag_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+            with requests.get(val_url, stream=True) as r: r.raise_for_status();
+            with open(hellaswag_path, 'wb') as f: [f.write(chunk) for chunk in r.iter_content(chunk_size=8192)]
             print("Download successful.")
-        except requests.exceptions.RequestException as e:
-            print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
-            if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
-            return -1.0
-        except Exception as e:
-             print(f"An unexpected error occurred during download: {e}")
-             if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
-             return -1.0
-
-    # Determine device and evaluation context
-    model_device = next(model.parameters()).device
-    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
-
-    # --- MODIFICATION HERE ---
-    # Force float32 context specifically for HellaSwag evaluation for stability
-    print(f"DEBUG: Forcing torch.float32 context for HellaSwag model forward pass (Device: {device_type}).")
-    if device_type == 'cuda':
-        # Use autocast BUT explicitly set dtype to float32
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float32) # FORCE FLOAT32
-    else:
-        # No autocast needed for CPU, float32 is default
-        eval_ctx = nullcontext()
-    # --- END MODIFICATION ---
-
+        except Exception as e: print(f"Download failed: {e}. Cannot eval."); return -1.0
+    model_device = next(model.parameters()).device; device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+    eval_ctx = nullcontext()
+    if device_type == 'cuda': print("DEBUG: Using torch.float32 context for HellaSwag model call."); eval_dtype = torch.float32; eval_ctx = torch.amp.autocast(device_type=device_type, dtype=eval_dtype)
     try:
-        with open(hellaswag_path, 'r', encoding='utf-8') as f:
-            eval_counter = 0 # Add counter for debug prints
+        with open(hellaswag_path, 'r') as f:
             for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
-                try:
-                    example = json.loads(line)
-                except json.JSONDecodeError:
-                    print(f"Warning: Skipping invalid JSON line: {line.strip()}")
-                    continue
-
-                num_total += 1
-                ctx = example['ctx']
-                label = example['label']
-                endings = example['endings']
-
-                try:
-                    ctx_tokens = enc.encode(ctx)
-                    if not ctx_tokens:
-                        num_total -= 1
-                        continue
-                except Exception as e:
-                     print(f"Warning: Skipping example due to encoding error in context: {e}")
-                     num_total -= 1
-                     continue
-
-                tok_rows = []
-                mask_rows = []
-
+                example = json.loads(line); num_total += 1; ctx = example['ctx']; label = example['label']; endings = example['endings']
+                ctx_tokens = enc.encode(ctx)
+                if not ctx_tokens: print(f"Warning: Skipping empty context."); num_total -=1; continue
+                tok_rows = []; mask_rows = []
                 for end in endings:
-                    try:
-                        completion_tokens = enc.encode(end)
-                    except Exception as e:
-                         print(f"Warning: Encoding error in completion, skipping this ending: {e}")
-                         completion_tokens = []
-
-                    tok = ctx_tokens + completion_tokens
-                    mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
-
+                    completion_tokens = enc.encode(end); tok = ctx_tokens + completion_tokens; mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
                     if len(tok) > model.config.block_size:
-                        num_comp = len(completion_tokens)
-                        max_ctx = model.config.block_size - num_comp
-                        if max_ctx < 0:
-                            completion_tokens = completion_tokens[:model.config.block_size]
-                            tok = completion_tokens
-                            mask = [1] * len(tok)
-                            max_ctx = 0
-                        else:
-                            start_idx = max(0, len(ctx_tokens) - max_ctx)
-                            trunc_ctx = ctx_tokens[start_idx:]
-                            tok = trunc_ctx + completion_tokens
-                            mask = [0]*len(trunc_ctx) + [1]*len(completion_tokens)
-                        if len(tok) > model.config.block_size:
-                            tok = tok[-model.config.block_size:]
-                            mask = mask[-model.config.block_size:]
-
-                    if len(tok) < 2:
-                        pad_len = 2 - len(tok)
-                        eot_token_id = getattr(enc, 'eot_token', 0) # Use EOT if available, else 0
-                        tok = tok + ([eot_token_id] * pad_len)
-                        mask = mask + ([0] * pad_len)
-
-                    tok_rows.append(torch.tensor(tok, dtype=torch.long))
-                    mask_rows.append(torch.tensor(mask, dtype=torch.long))
-
-                if not tok_rows:
-                     continue
-
-                max_len = max(len(r) for r in tok_rows)
-                max_len = max(2, max_len)
-                pad_token_id = getattr(enc, 'pad_token_id', getattr(enc, 'eot_token', 0))
-
-                tokens = torch.full((len(tok_rows), max_len), pad_token_id, dtype=torch.long)
-                mask_t = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
-
-                for i, (tr, mr) in enumerate(zip(tok_rows, mask_rows)):
-                    seq_len = len(tr)
-                    tokens[i, :seq_len] = tr
-                    mask_t[i, :seq_len] = mr
-
-                tokens = tokens.to(model_device)
-                mask_t = mask_t.to(model_device)
-
-                # --- Model Inference ---
-                # model.eval() should be set outside this function, before calling estimate_loss
-                with eval_ctx: # Apply the modified (float32) context
-                    logits, _ = model(tokens)
-
-                # --- Add Debug Print for Logits ---
-                if device_type == 'cuda' and eval_counter < 1: # Print only for the first example
-                     print(f"DEBUG: Logits dtype inside evaluate_hellaswag: {logits.dtype}")
-                # --- End Debug Print ---
-
-                if torch.isnan(logits).any() or torch.isinf(logits).any():
-                     print(f"ERROR: NaNs or Infs detected in HellaSwag logits for example context: {ctx[:50]}...")
-                     pred_norm = -1
+                        num_comp = len(completion_tokens); max_ctx = model.config.block_size - num_comp
+                        if max_ctx < 0: completion_tokens=completion_tokens[:model.config.block_size]; tok=completion_tokens; mask=[1]*len(tok); max_ctx=0
+                        start_idx = max(0, len(ctx_tokens)-max_ctx); trunc_ctx = ctx_tokens[start_idx:]
+                        tok = trunc_ctx + completion_tokens; mask = [0]*len(trunc_ctx) + [1]*len(completion_tokens)
+                        if len(tok) > model.config.block_size: tok = tok[-model.config.block_size:]; mask = mask[-model.config.block_size:]
+                    if len(tok) <= 1: tok=tok+[0]*(2-len(tok)); mask=mask+[0]*(2-len(mask))
+                    tok=tok[:model.config.block_size]; mask=mask[:model.config.block_size]
+                    tok_rows.append(torch.tensor(tok,dtype=torch.long)); mask_rows.append(torch.tensor(mask,dtype=torch.long))
+                if not tok_rows: continue
+                max_len = max(len(r) for r in tok_rows);
+                if max_len <= 1: max_len = 2
+                tokens=torch.zeros((len(tok_rows),max_len),dtype=torch.long); mask_t=torch.zeros((len(tok_rows),max_len),dtype=torch.long) # Renamed mask tensor here
+                for i, (tr, mr) in enumerate(zip(tok_rows, mask_rows)): tokens[i,:len(tr)]=tr; mask_t[i,:len(mr)]=mr # Use mask_t
+                tokens=tokens.to(model_device); mask_t=mask_t.to(model_device) # Use mask_t
+                model.eval();
+                with eval_ctx: logits, _ = model(tokens)
+                if torch.isnan(logits).any() or torch.isinf(logits).any(): print(f"ERROR: NaNs/Infs in HS logits!"); pred_norm = 0
                 else:
-                    try:
-                        # --- Pass counter for debugging get_most_likely_row ---
-                        pred_norm = get_most_likely_row(tokens, mask_t, logits, debug_print=(eval_counter < 1))
-                    except Exception as e:
-                         print(f"ERROR occurred inside get_most_likely_row: {e}")
-                         import traceback
-                         traceback.print_exc()
-                         pred_norm = -1
+                    try: pred_norm = get_most_likely_row(tokens, mask_t, logits) # Pass mask_t
+                    except Exception as e: print(f"ERROR in get_most_likely_row: {e}"); import traceback; traceback.print_exc(); pred_norm = 0
+                if pred_norm == label: num_correct_norm += 1
+    except FileNotFoundError: print(f"Error: HS file not found: {hellaswag_path}"); return -1.0
+    except Exception as e: print(f"Error during HS eval loop: {e}"); import traceback; traceback.print_exc(); return -1.0
+    acc_norm = num_correct_norm / num_total if num_total > 0 else 0.0; print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})"); return acc_norm
 
-                if pred_norm == label:
-                    num_correct_norm += 1
-
-                eval_counter += 1 # Increment counter
-
-    except FileNotFoundError:
-        print(f"Error: HellaSwag validation file not found at {hellaswag_path} even after download attempt.")
-        return -1.0
-    except Exception as e:
-        print(f"An unexpected error occurred during the HellaSwag evaluation loop: {e}")
-        import traceback
-        traceback.print_exc()
-        return -1.0
-
-    if num_total == 0:
-        print("Warning: No examples were processed during HellaSwag evaluation.")
-        return 0.0
-    acc_norm = float(num_correct_norm) / num_total
-    print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})")
-    return acc_norm
 
 
 # --- Example Usage / Testing Block ---
