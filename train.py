@@ -428,52 +428,45 @@ if ddp:
 
 # ---- Loss Estimation Function ----
 @torch.no_grad()
-def estimate_loss(eval_model): # Pass the model to evaluate
+def estimate_loss(model):
     out = {}
-    eval_model.eval() # Set model to eval mode INSIDE the function
-    model_device = next(eval_model.parameters()).device # Get device from the passed model
-    device_type = 'cuda' if 'cuda' in str(model_device) else ('mps' if 'mps' in str(model_device) else 'cpu')
+    # model should be passed in eval mode
+    model_device = next(model.parameters()).device
+    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
 
-    # Determine autocast context based on the evaluation model's device
+    # ---- Determine autocast context INSIDE the function ----
+    # Use the same dtype logic as in the main script training part
     if device_type == 'cuda':
-        global dtype # Access the global dtype setting ('bfloat16' or 'float16')
+        # Use the global 'dtype' variable ('bfloat16' or 'float16')
+        # Ensure 'dtype' variable is accessible here or pass it in if needed
+        global dtype # Access the global dtype setting
         ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
         eval_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
     else: # CPU or MPS
         eval_ctx = nullcontext()
+    # ---- End context determination ----
 
     for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters, device=model_device) # Use model's device for losses tensor
+        losses = torch.zeros(eval_iters, device=model_device) # Use model's device
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            # Move batch data explicitly to model's device just in case get_batch doesn't
+            # Move batch data explicitly to model's device
             X, Y = X.to(model_device), Y.to(model_device)
-            with eval_ctx:
-                logits, loss = eval_model(X, Y) # Use the passed model
+            with eval_ctx: # Use locally determined context
+                logits, loss = model(X, Y)
             if loss is not None and not torch.isnan(loss): losses[k] = loss.item()
-            else: losses[k] = float('nan') # Assign NaN if loss is None or NaN
-        valid_losses = losses[~torch.isnan(losses)] # Filter out NaNs
-        out[split] = valid_losses.mean().item() if len(valid_losses) > 0 else float('inf') # Use .item() for single value tensor
+            else: losses[k] = float('nan')
+        valid_losses = losses[~torch.isnan(losses)]
+        out[split] = valid_losses.mean() if len(valid_losses) > 0 else float('inf')
 
-    # HellaSwag evaluation on master process
-    # Pass the unwrapped model to evaluate_hellaswag
     if hellaswag and master_process:
-        # Ensure we have the raw model for single-GPU evaluation functions
-        raw_eval_model = eval_model.module if isinstance(eval_model, DDP) else eval_model
-        try:
-             hellaswag_acc = evaluate_hellaswag(raw_eval_model, enc, hellaswag_path) # Pass path only
-             out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0 # Handle potential None return
-        except NameError: # Handle case where 'enc' might not be defined (if tiktoken failed)
-             print("Warning: HellaSwag evaluation skipped because tokenizer ('enc') is not available.")
-             out['hellaswag'] = -1.0
-        except Exception as e:
-             print(f"Error during HellaSwag evaluation: {e}")
-             out['hellaswag'] = -1.0 # Report error state
+        eval_model = model.module if ddp else model
+        # evaluate_hellaswag now determines its own context
+        hellaswag_acc = evaluate_hellaswag(eval_model, enc, hellaswag_path) # Pass path only
+        out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0
+    elif hellaswag:
+         out['hellaswag'] = 0.0
 
-    elif hellaswag: # Non-master processes report 0 or default
-         out['hellaswag'] = 0.0 # Or perhaps None/NaN to indicate it wasn't calculated?
-
-    eval_model.train() # Set model back to train mode before exiting
     return out
 # -----------------------------
 
