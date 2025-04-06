@@ -49,17 +49,25 @@ batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch si
 block_size = 1024
 # model
 n_layer = 12
-n_head = 16
+user_config = input("Which Config? (16/12) ")
+if user_config == "12":
+    n_head = 12
+    d_reduction_factor = 4
+elif user_config == "16":
+    n_head = 16
+    d_reduction_factor = 3
+else:
+    print("invalid config")
+    exit(1)
 n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 # --- Time-Step Gated Reduction Config --- (NEW DEFAULTS)
 use_gated_reduction = True # Default to standard GPT
-d_reduction_factor = 3     # Default: 1 means no reduction (gating_d_new = n_embd)
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer
-learning_rate = 2e-4 # max learning rate
+learning_rate = 4e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
