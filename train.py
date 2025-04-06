@@ -60,7 +60,7 @@ dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 # Gated Reduction specific flags (NEW)
 use_gated_reduction = True # Default based on your last model.py update
-d_reduction_factor = 3     # Default: 1 means no reduction (gating_d_new = n_embd)
+d_reduction_factor = 4     # Default: 1 means no reduction (gating_d_new = n_embd)
 gating_d_new = None        # Will be calculated later based on n_embd and d_reduction_factor
 # adamw optimizer
 learning_rate = 3e-4 # 6e-4 max learning rate
