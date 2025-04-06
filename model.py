@@ -106,18 +106,21 @@ class CausalSelfAttention(nn.Module):
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
 
-        # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
         if not self.flash:
             print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
             # causal mask to ensure that attention is only applied to the left in the input sequence
             # Note: Fixed size mask. Will be sliced if sequence length T < block_size
             mask = torch.tril(torch.ones(config.block_size, config.block_size))
-            self.register_buffer("bias", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
+            # Use a different name for the mask buffer to avoid conflict with self.bias (the bool flag)
+            self.register_buffer("causal_mask", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
+        # No need for an else block here regarding buffer registration for flash attention
         else:
-            # register buffer is not needed with flash attention
-            self.register_buffer("bias", None, persistent=False)
-            print(f"   - CausalSelfAttention: Using Flash Attention (embed_dim={self.embed_dim})")
+             print(f"   - CausalSelfAttention: Using Flash Attention (embed_dim={self.embed_dim})")
+             # Ensure the attribute for the mask doesn't exist if not needed, or explicitly set to None
+             # if other parts of the code might check for its existence.
+             # Setting it to None is safer if the forward pass checks for it.
+             self.register_buffer("causal_mask", None, persistent=False) # Register as None if flash is ON
 
 
     def forward(self, x):
@@ -144,10 +147,13 @@ class CausalSelfAttention(nn.Module):
             # manual implementation of attention
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
             # Apply causal mask
-            if self.bias is None: raise RuntimeError("Slow attention requires bias buffer")
+            if self.causal_mask is None: # Check the correct buffer name
+                 # This should theoretically not happen if self.flash is False, but good practice check
+                 raise RuntimeError("Slow attention requires causal_mask buffer, but it's None.")
             # Slice the mask if T is smaller than block_size
-            slice_T = min(T, self.bias.size(-1))
-            att = att.masked_fill(self.bias[:,:,:slice_T,:slice_T] == 0, float('-inf'))
+            slice_T = min(T, self.causal_mask.size(-1)) # Use causal_mask shape
+            # Apply the mask using the correct buffer name
+            att = att.masked_fill(self.causal_mask[:,:,:slice_T,:slice_T] == 0, float('-inf'))
             # Apply softmax and dropout
             att = F.softmax(att, dim=-1)
             att = self.attn_dropout(att)
