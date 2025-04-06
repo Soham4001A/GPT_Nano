@@ -59,11 +59,11 @@ d_reduction_factor = 4     # Default: 1 means no reduction (gating_d_new = n_emb
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer
-learning_rate = 3e-4 # max learning rate
+learning_rate = 2e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
-beta2 = 0.95
+beta2 = 0.95 
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
