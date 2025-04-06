@@ -665,10 +665,11 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
     eval_dtype = torch.float32 # Use float32 for stability in evaluation metrics like loss
 
     if device_type == 'cuda':
-        # Use autocast for potential speedup, but ensure critical ops use float32 if needed
-        print("DEBUG: Using torch.amp.autocast(device_type='cuda', dtype=float16) for HellaSwag model forward pass.")
-        # Note: Loss calculation inside get_most_likely_row should still be stable enough with autocast context
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float16) # Use float16 for speed
+        # Force float32 context specifically for HellaSwag evaluation for stability
+        print("DEBUG: Forcing torch.float32 context for HellaSwag model forward pass.")
+        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float32) # FORCE FLOAT32
+    # else: # CPU uses float32 by default, no autocast needed
+    #    eval_ctx = nullcontext() # Already initialized above
 
     try:
         with open(hellaswag_path, 'r', encoding='utf-8') as f:
