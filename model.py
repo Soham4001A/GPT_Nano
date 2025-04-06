@@ -1,652 +1,991 @@
+# ----- model.py -----
 """
-This training script can be run both on a single gpu in debug mode,
-and also in a larger training run with distributed data parallel (ddp).
-
-Includes optional HellaSwag evaluation.
-
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False --use_gated_reduction=True --d_reduction_factor=2
-
-To run with DDP on 4 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=4 train.py --use_gated_reduction=True --d_reduction_factor=2
-
-To run with DDP on 4 gpus across 2 nodes, example:
-- Run on the first (master) node with example IP 123.456.123.456:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123.456 --master_port=1234 train.py [gated_reduction_args...]
-- Run on the worker node:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py [gated_reduction_args...]
-(If your cluster does not have Infiniband interconnect prepend NCCL_IB_DISABLE=1)
+Full definition of a GPT Language Model, all of it in this single file.
+Supports standard GPT architecture or a time-step-wise Gated Reduction
+before standard Causal Self-Attention blocks.
 """
 
-import os
-import time
 import math
-import pickle
-from contextlib import nullcontext
-import tiktoken # <--- IMPORT TIKTOKEN
-
-import numpy as np
+import inspect
+from dataclasses import dataclass, field
+import os
+import tqdm, json # For HellaSwag
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
-
-# Assuming model.py contains GPTConfig, GPT, and evaluate_hellaswag
-from model import GPTConfig, GPT, evaluate_hellaswag # <--- IMPORT evaluate_hellaswag
-
-# -----------------------------------------------------------------------------
-# default config values designed to train a gpt2 (124M) on OpenWebText
-# I/O
-out_dir = 'out'
-eval_interval = 1000
-log_interval = 1
-eval_iters = 200
-eval_only = False # if True, script exits right after the first eval
-always_save_checkpoint = True # if True, always save a checkpoint after each eval
-init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
-# wandb logging
-wandb_log = False # disabled by default
-wandb_project = 'owt'
-wandb_run_name = 'gpt2' # 'run' + str(time.time())
-# data
-dataset = 'openwebtext'
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
-# model
-n_layer = 12
-n_head = 12
-n_embd = 768
-dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
-bias = False # do we use bias inside LayerNorm and Linear layers?
-# Gated Reduction specific flags (NEW)
-use_gated_reduction = True # Default based on your last model.py update
-d_reduction_factor = 3     # Default: 1 means no reduction (gating_d_new = n_embd)
-gating_d_new = None        # Will be calculated later based on n_embd and d_reduction_factor
-# adamw optimizer
-learning_rate = 3e-4 # 6e-4 max learning rate
-max_iters = 600000 # total number of training iterations
-weight_decay = 1e-1
-beta1 = 0.9
-beta2 = 0.95
-grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
-# learning rate decay settings
-decay_lr = True # whether to decay the learning rate
-warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-min_lr = 1e-6 # 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-# DDP settings
-backend = 'nccl' # Default backend, will be adjusted based on device
-# system
-# --- Determine device and backend ---
-if torch.cuda.is_available():
-    device = 'cuda'
-    backend = 'nccl' # NCCL is generally preferred for CUDA DDP
-elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-    device = 'mps'
-    # Check if DDP is active later, and force CPU if DDP+MPS
-    backend = 'gloo' # Gloo *might* work, but often CPU fallback needed
-    print("WARNING: Using MPS device. DDP support might be limited or experimental.")
-else:
-    device = 'cpu'
-    backend = 'gloo' # Use Gloo for CPU distributed training
-# --- End device/backend determination ---
-
-# Dtype and Autocast setup
-dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # Use float16 by default if no bfloat16 support
-compile = False # Disable torch.compile initially for broader compatibility/debugging
-
-# --- HellaSwag ---
-hellaswag = True # Default to True, override with config file or cmd line
-hellaswag_path = 'data/hellaswag/hellaswag_val.jsonl' # Default path
+import torch.nn as nn
+from torch.nn import functional as F
+import numpy as np
+from contextlib import nullcontext
+from tiktoken.core import Encoding # For HellaSwag
 
 # -----------------------------------------------------------------------------
-# Load config overrides from command line or config file
-config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None)))] # Include NoneType
-exec(open('configurator.py').read()) # overrides from command line or config file
-config = {k: globals()[k] for k in config_keys} # will be useful for logging
+# Core Model Components
 # -----------------------------------------------------------------------------
 
-# ----- Derive gating_d_new AFTER config loading -----
-if use_gated_reduction:
-    if 'gating_d_new' in config and config['gating_d_new'] is not None:
-        # If gating_d_new was explicitly set via command line/config file, use it
-        gating_d_new = config['gating_d_new']
-        print(f"Using explicitly set gating_d_new: {gating_d_new}")
-        if not isinstance(gating_d_new, int) or gating_d_new <= 0:
-            raise ValueError(f"Explicit gating_d_new must be a positive integer, got {gating_d_new}")
-    else:
-        # Calculate from n_embd and d_reduction_factor
-        if not isinstance(d_reduction_factor, int) or d_reduction_factor < 1:
-             raise ValueError(f"d_reduction_factor must be an integer >= 1, got {d_reduction_factor}")
-        if n_embd % d_reduction_factor != 0:
-            print(f"Warning: n_embd ({n_embd}) is not perfectly divisible by d_reduction_factor ({d_reduction_factor}).")
-        # Use integer division
-        gating_d_new = n_embd // d_reduction_factor
-        # Ensure it's at least 1 (or maybe n_head if we want strict divisibility later)
-        gating_d_new = max(1, gating_d_new)
-        print(f"Calculated gating_d_new: {n_embd} // {d_reduction_factor} = {gating_d_new}")
-    # Update config dict with the final derived/validated value
-    config['gating_d_new'] = gating_d_new
-else:
-    # Ensure gating_d_new is None if reduction is not used
-    gating_d_new = None
-    config['gating_d_new'] = None
-    # If reduction factor was set but use_gated_reduction is false, maybe warn?
-    if d_reduction_factor != 1:
-        print(f"Warning: d_reduction_factor ({d_reduction_factor}) is set, but use_gated_reduction is False. Factor will be ignored.")
-# ----- End deriving gating_d_new -----
+@dataclass
+class GPTConfig:
+    block_size: int = 1024
+    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    n_layer: int = 12
+    n_head: int = 12
+    n_embd: int = 768
+    dropout: float = 0.0
+    d_reduction_factor: int= 1
+    bias: bool = True # True: use bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    # --- New Gating Configuration ---
+    use_gated_reduction: bool = True # If True, use TimeStepGatedReduction to map n_embd -> gating_d_new
+    gating_d_new: int = n_embd/d_reduction_factor # Target dimension after gating. Must be set if use_gated_reduction=True.
+
+class LayerNorm(nn.Module):
+    """ LayerNorm with optional bias. """
+    def __init__(self, ndim, bias):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(ndim))
+        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+    def forward(self, input):
+        expected_dim = self.weight.shape[0]
+        if input.size(-1) != expected_dim:
+             raise RuntimeError(f"LayerNorm dim mismatch: Input={input.shape}, Expected Dim={expected_dim}")
+        # Calculate normalization based on the last dimension (ndim)
+        return F.layer_norm(input, (expected_dim,), self.weight, self.bias, 1e-5)
 
 
-# ----- DDP and Device Setup -----
-ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
-if ddp:
-    # Check/adjust backend based on final device choice (esp. MPS)
-    if device == 'mps':
-        print("Warning: DDP requested with MPS device. Forcing CPU backend/device due to compatibility issues.")
-        device = 'cpu'    # Force CPU for DDP if MPS was initially detected
-        backend = 'gloo'  # Ensure Gloo backend for CPU DDP
-    elif backend == 'nccl' and not torch.cuda.is_available():
-        print("Warning: NCCL backend specified but CUDA not available. Switching to Gloo.")
-        backend = 'gloo'
+# --- Time-Step-Wise Gated Reduction Layer ---
+class TimeStepGatedReduction(nn.Module):
+    """
+    Applies a Gated Linear Unit (GLU) independently to each time step
+    to reduce the feature dimension from d0 to d_new.
+    Input: (B, L, d0)
+    Output: (B, L, d_new)
+    """
+    def __init__(self, d0: int, d_new: int, bias: bool):
+        super().__init__()
+        if d0 <= 0 or d_new <= 0:
+            raise ValueError(f"TimeStepGatedReduction dims must be positive (d0={d0}, d_new={d_new})")
+        self.d0 = d0
+        self.d_new = d_new
+        print(f"  Initializing TimeStepGatedReduction: d0={d0} -> d_new={d_new}")
 
-    # Initialize process group
-    init_process_group(backend=backend)
-    ddp_rank = int(os.environ['RANK'])
-    ddp_local_rank = int(os.environ['LOCAL_RANK'])
-    ddp_world_size = int(os.environ['WORLD_SIZE'])
-    # Assign device based on local rank only if using CUDA
-    if device == 'cuda':
-        device = f'cuda:{ddp_local_rank}'
-        torch.cuda.set_device(device)
-    # For CPU DDP, 'device' remains 'cpu'
-    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
-    seed_offset = ddp_rank # each process gets a different seed
-    # world_size number of processes will be training simultaneously, so we can scale
-    # down the desired gradient accumulation iterations per process proportionally
-    assert gradient_accumulation_steps % ddp_world_size == 0
-    gradient_accumulation_steps //= ddp_world_size
-else:
-    # if not ddp, we are running on a single gpu, and one process
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
-# ------------------------------------
+        # Project to d_new for both gate and value
+        self.gate_proj = nn.Linear(d0, d_new, bias=bias)
+        self.value_proj = nn.Linear(d0, d_new, bias=bias)
+        # Consider adding an activation to value_proj if needed, e.g., GELU
+        # self.value_act = nn.GELU()
 
-tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
-print(f"tokens per iteration will be: {tokens_per_iter:,}")
-print(f"Using device: {device}, Backend: {backend if ddp else 'N/A'}") # Log final device/backend
+    def forward(self, x):
+        # x shape: (B, L, d0)
+        if x.size(-1) != self.d0:
+            raise ValueError(f"TimeStepGatedReduction input dim mismatch: Expected {self.d0}, got {x.size(-1)}")
 
-if master_process:
-    os.makedirs(out_dir, exist_ok=True)
-torch.manual_seed(1337 + seed_offset)
-torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-# Determine device type string and PyTorch dtype
-if 'cuda' in device: device_type = 'cuda'
-elif 'mps' in device: device_type = 'mps'
-else: device_type = 'cpu'
+        gate = self.gate_proj(x)  # (B, L, d_new)
+        value = self.value_proj(x) # (B, L, d_new)
+        # Apply activation if included: value = self.value_act(value)
 
-# Adjust dtype and autocast context based on final device_type
-if device_type == 'cuda':
-    ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-    ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-else: # CPU or MPS
-    ptdtype = torch.float32
-    dtype = 'float32' # Force float32 for CPU/MPS
-    ctx = nullcontext()
-    if device_type == 'mps': print("Using float32 on MPS device, disabling Autocast.")
+        # Apply sigmoid gating
+        activated_gate = torch.sigmoid(gate)
+        gated_value = activated_gate * value # Element-wise multiplication
 
-print(f"Using PyTorch dtype: {ptdtype}")
+        # Output shape: (B, L, d_new)
+        return gated_value
 
-# ---- Data Loader ----
-data_dir = os.path.join('data', dataset)
-train_data_path = os.path.join(data_dir, 'train.bin')
-val_data_path = os.path.join(data_dir, 'val.bin')
-# Check if data files exist
-if not os.path.exists(train_data_path) or not os.path.exists(val_data_path):
-    print("\nERROR: Training data (.bin files) not found.")
-    print(f"Expected locations: {train_data_path}, {val_data_path}")
-    print(f"Please ensure the '{dataset}' dataset is prepared correctly in the '{data_dir}' directory.")
-    print("You may need to run the data preparation script (e.g., prepare.py for openwebtext).")
-    exit(1) # Exit if data is missing
+# --- Standard CausalSelfAttention (Modified to accept embed_dim) ---
+class CausalSelfAttention(nn.Module):
+    """ Standard MHA implementation, now accepting embed_dim """
+    def __init__(self, config: GPTConfig, embed_dim: int):
+        super().__init__()
+        assert embed_dim % config.n_head == 0, f"embed_dim ({embed_dim}) must be divisible by n_head ({config.n_head})"
+        self.embed_dim = embed_dim
+        self.n_head = config.n_head
+        self.dropout = config.dropout
+        self.bias = config.bias
 
-def get_batch(split):
-    data_path = train_data_path if split == 'train' else val_data_path
-    try:
-        data = np.memmap(data_path, dtype=np.uint16, mode='r')
-    except FileNotFoundError:
-        print(f"Error: Data file not found at {data_path}")
-        raise # Re-raise the exception
-    except Exception as e:
-        print(f"Error memory mapping file {data_path}: {e}")
-        raise
+        # key, query, value projections for all heads, but in a batch
+        self.c_attn = nn.Linear(self.embed_dim, 3 * self.embed_dim, bias=self.bias)
+        # output projection
+        self.c_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=self.bias)
+        # regularization
+        self.attn_dropout = nn.Dropout(config.dropout)
+        self.resid_dropout = nn.Dropout(config.dropout)
 
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    # Move data to the correct device
-    x, y = x.to(device), y.to(device)
-    return x, y
-# --------------------
-
-# ---- Tokenizer for HellaSwag ----
-# NOTE: Requires tiktoken (`pip install tiktoken`)
-try:
-    enc = tiktoken.get_encoding("gpt2")
-except ImportError:
-     print("Warning: tiktoken not installed. HellaSwag evaluation will be disabled.")
-     print("Install tiktoken: pip install tiktoken")
-     hellaswag = False # Disable hellaswag if tiktoken is missing
-except Exception as e:
-     print(f"Error initializing tiktoken: {e}")
-     hellaswag = False # Disable hellaswag on other tiktoken errors
-# ---------------------------------
-
-# init these up here, can override if init_from='resume' (i.e. from a checkpoint)
-iter_num = 0
-best_val_loss = 1e9
-
-# attempt to derive vocab_size from the dataset meta file
-meta_path = os.path.join(data_dir, 'meta.pkl')
-meta_vocab_size = None
-if os.path.exists(meta_path):
-    with open(meta_path, 'rb') as f:
-        meta = pickle.load(f)
-    meta_vocab_size = meta['vocab_size']
-    print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
-else:
-     print(f"Warning: meta.pkl not found in {data_dir}. Using default vocab_size=50304")
-
-
-# ---- Model Initialization ----
-# Ensure gating_d_new derived above is used here
-model_args = dict(
-    n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-    bias=bias, vocab_size=None, dropout=dropout,
-    use_gated_reduction=use_gated_reduction, # Pass gating flag
-    gating_d_new=gating_d_new # Pass derived/validated d_new
-)
-print("Model Arguments Being Passed to GPTConfig:")
-print(model_args)
-
-if init_from == 'scratch':
-    print("Initializing a new model from scratch")
-    # Determine vocab size: use meta if available, otherwise use a reasonable default
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
-    if meta_vocab_size is None:
-        print(f"Warning: vocab_size not found in meta.pkl, using default: {model_args['vocab_size']}")
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
-elif init_from == 'resume':
-    print(f"Resuming training from {out_dir}")
-    ckpt_path = os.path.join(out_dir, 'ckpt.pt')
-    if not os.path.exists(ckpt_path):
-        print(f"ERROR: Checkpoint file not found at {ckpt_path}. Cannot resume.")
-        exit(1)
-    checkpoint = torch.load(ckpt_path, map_location=device)
-    checkpoint_model_args = checkpoint['model_args']
-
-    # ---- Check for compatibility between checkpoint and current config ----
-    # Check gated reduction flag consistency
-    ckpt_use_gated = checkpoint_model_args.get('use_gated_reduction', False) # Default to False if missing
-    if use_gated_reduction != ckpt_use_gated:
-        print("\n!!! WARNING: Mismatch in 'use_gated_reduction' between config and checkpoint! !!!")
-        print(f"  Config: use_gated_reduction = {use_gated_reduction}")
-        print(f"  Checkpoint: use_gated_reduction = {ckpt_use_gated}")
-        print("Loading checkpoint's setting. Ensure this is intended.")
-        use_gated_reduction = ckpt_use_gated # Prioritize checkpoint setting
-        model_args['use_gated_reduction'] = use_gated_reduction # Update args
-
-    # Check gating_d_new consistency if gating is enabled in checkpoint
-    if use_gated_reduction:
-        ckpt_gating_d_new = checkpoint_model_args.get('gating_d_new', None)
-        # Compare with currently derived/set gating_d_new
-        if gating_d_new != ckpt_gating_d_new:
-            print("\n!!! WARNING: Mismatch in 'gating_d_new' between config/derived and checkpoint! !!!")
-            print(f"  Config/Derived: gating_d_new = {gating_d_new}")
-            print(f"  Checkpoint: gating_d_new = {ckpt_gating_d_new}")
-            if ckpt_gating_d_new is not None:
-                print("Loading checkpoint's 'gating_d_new'.")
-                gating_d_new = ckpt_gating_d_new # Prioritize checkpoint's value
-                model_args['gating_d_new'] = gating_d_new # Update args
-            else:
-                 print("Checkpoint missing 'gating_d_new' but has use_gated_reduction=True. Using config/derived value. Verify model structure.")
-
-    # Force core architecture settings from checkpoint
-    forced_keys = ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']
-    for k in forced_keys:
-        if k in checkpoint_model_args:
-             # Check for mismatch and warn if config differs from checkpoint
-             if k in model_args and model_args[k] != checkpoint_model_args[k]:
-                  print(f"Warning: Config value for '{k}' ({model_args[k]}) differs from checkpoint ({checkpoint_model_args[k]}). Using checkpoint value.")
-             model_args[k] = checkpoint_model_args[k]
+        # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
+        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+        if not self.flash:
+            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
+            # causal mask to ensure that attention is only applied to the left in the input sequence
+            # Note: Fixed size mask. Will be sliced if sequence length T < block_size
+            mask = torch.tril(torch.ones(config.block_size, config.block_size))
+            self.register_buffer("bias", mask.view(1, 1, config.block_size, config.block_size), persistent=False)
         else:
-             print(f"Warning: Checkpoint missing essential arg '{k}'. Using default/cmd line value: {model_args.get(k)}")
-             # If vocab_size is missing, try using meta_vocab_size again
-             if k == 'vocab_size' and model_args.get(k) is None:
-                 model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
-                 print(f"Attempting to set missing vocab_size to {model_args['vocab_size']}")
+            # register buffer is not needed with flash attention
+            self.register_buffer("bias", None, persistent=False)
+            print(f"   - CausalSelfAttention: Using Flash Attention (embed_dim={self.embed_dim})")
 
-    # Re-create model config and model with potentially updated args
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
 
-    # Load model state dict
-    state_dict = checkpoint['model']
-    unwanted_prefix = '_orig_mod.'
-    for k,v in list(state_dict.items()):
-        if k.startswith(unwanted_prefix):
-            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
-    model.load_state_dict(state_dict)
+    def forward(self, x):
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (embed_dim)
+        if C != self.embed_dim:
+             raise ValueError(f"CausalSelfAttention C mismatch: Expected {self.embed_dim}, got {C}")
 
-    # Load training state
-    iter_num = checkpoint['iter_num']
-    best_val_loss = checkpoint['best_val_loss']
-    print(f"Resumed from iteration {iter_num} with best_val_loss {best_val_loss:.4f}")
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q, k, v  = self.c_attn(x).split(self.embed_dim, dim=2)
+        head_dim = C // self.n_head
+        q = q.view(B, T, self.n_head, head_dim).transpose(1, 2) # (B, nh, T, hs)
+        k = k.view(B, T, self.n_head, head_dim).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, head_dim).transpose(1, 2) # (B, nh, T, hs)
 
-elif init_from.startswith('gpt2'):
-    print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
-    # --- CRITICAL CHECK ---
-    if use_gated_reduction:
-        print("\nERROR: Cannot initialize model with 'use_gated_reduction=True' from standard GPT-2 weights.")
-        print("Standard GPT-2 checkpoints do not have the necessary TimeStepGatedReduction layers.")
-        print("Set 'use_gated_reduction=False' or train from scratch/resume a gated checkpoint.")
-        exit(1)
-    # --- End Check ---
+        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            # Note: is_causal=True handles the masking implicitly.
+            # dropout_p is applied only during training.
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=None,
+                                               dropout_p=self.dropout if self.training else 0,
+                                               is_causal=True)
+        else:
+            # manual implementation of attention
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            # Apply causal mask
+            if self.bias is None: raise RuntimeError("Slow attention requires bias buffer")
+            # Slice the mask if T is smaller than block_size
+            slice_T = min(T, self.bias.size(-1))
+            att = att.masked_fill(self.bias[:,:,:slice_T,:slice_T] == 0, float('-inf'))
+            # Apply softmax and dropout
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
 
-    override_args = dict(dropout=dropout)
-    # Ensure gating args are explicitly off when loading standard GPT-2
-    override_args['use_gated_reduction'] = False
-    override_args['gating_d_new'] = None
+        # Re-assemble all head outputs side by side
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # (B, T, C)
 
-    model = GPT.from_pretrained(init_from, override_args)
-    # Read back the config parameters from the loaded model (they are already set by from_pretrained)
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = getattr(model.config, k)
-    # Ensure our derived config matches the loaded model's config
-    model_args['use_gated_reduction'] = False
-    model_args['gating_d_new'] = None
-# --------------------------
+        # output projection
+        y = self.resid_dropout(self.c_proj(y))
+        return y
 
-# Crop block size if needed (must happen AFTER model init)
-if block_size < model.config.block_size:
-    print(f"Cropping model block size from {model.config.block_size} to {block_size}")
+# --- MLP (Modified to accept embed_dim) ---
+class MLP(nn.Module):
+    def __init__(self, config: GPTConfig, embed_dim: int):
+        super().__init__()
+        self.input_dim = embed_dim
+        hidden_dim = 4 * self.input_dim
+        self.c_fc    = nn.Linear(self.input_dim, hidden_dim, bias=config.bias)
+        self.gelu    = nn.GELU()
+        self.c_proj  = nn.Linear(hidden_dim, self.input_dim, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+        #print(f"   - MLP: Initialized for dim={self.input_dim}")
+
+    def forward(self, x):
+        if x.size(-1) != self.input_dim:
+            raise ValueError(f"MLP input dim mismatch: Expected {self.input_dim}, got {x.size(-1)}")
+        x = self.c_fc(x)
+        x = self.gelu(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
+        return x
+
+# --- Block (Simplified: Always uses MHA on operating_dim) ---
+class Block(nn.Module):
+    """ Transformer Block: Always uses CausalSelfAttention """
+    def __init__(self, config: GPTConfig, operating_dim: int):
+        super().__init__()
+        self.operating_dim = operating_dim
+        #print(f" Initializing Block {id(self)}: Dim={self.operating_dim}")
+        self.ln_1 = LayerNorm(self.operating_dim, bias=config.bias)
+        self.attn = CausalSelfAttention(config, self.operating_dim) # Pass operating_dim
+        self.ln_2 = LayerNorm(self.operating_dim, bias=config.bias)
+        self.mlp = MLP(config, self.operating_dim) # Pass operating_dim
+
+    def forward(self, x):
+        # Input x: (B, T_current, self.operating_dim)
+        B, T_current, C_current = x.shape
+        if C_current != self.operating_dim:
+            raise ValueError(f"Block C mismatch: Expected {self.operating_dim}, got {C_current}")
+
+        # Residual connection around Attention
+        attn_output = self.attn(self.ln_1(x))
+        x = x + attn_output
+
+        # Residual connection around MLP
+        mlp_output = self.mlp(self.ln_2(x))
+        x = x + mlp_output
+
+        return x
+
+# --- GPT Model ---
+class GPT(nn.Module):
+    def __init__(self, config: GPTConfig):
+        super().__init__()
+        assert config.vocab_size is not None
+        assert config.block_size is not None
+        self.config = config
+
+        # --- Determine operating dimension within the transformer blocks ---
+        self.operates_on_reduced_dim = config.use_gated_reduction
+        self.gated_reduction = None
+        self.final_ln_lm_head_dim = config.n_embd # Default to input embedding dim
+
+        if self.operates_on_reduced_dim:
+            print("--- Configuring Gated Reduction ---")
+            if config.gating_d_new is None:
+                raise ValueError("gating_d_new must be specified in GPTConfig when use_gated_reduction is True.")
+            if config.gating_d_new <= 0:
+                 raise ValueError(f"gating_d_new ({config.gating_d_new}) must be positive.")
+            if config.gating_d_new >= config.n_embd:
+                print(f"Warning: gating_d_new ({config.gating_d_new}) >= n_embd ({config.n_embd}). Gating will not reduce dimension.")
+            # Check if d_new is divisible by n_head (good practice for MHA)
+            if config.gating_d_new % config.n_head != 0:
+                # Option 1: Raise error
+                # raise ValueError(f"gating_d_new ({config.gating_d_new}) must be divisible by n_head ({config.n_head}).")
+                # Option 2: Adjust d_new (choose one)
+                # target_d_new_init = max(config.n_head, (config.gating_d_new // config.n_head) * config.n_head)
+                # print(f"Warning: Adjusting gating_d_new {config.gating_d_new} -> {target_d_new_init} to be divisible by n_head ({config.n_head})")
+                # config.gating_d_new = target_d_new_init
+                # Option 3: Warn but proceed (MHA can handle it, might be less optimal)
+                 print(f"Warning: gating_d_new ({config.gating_d_new}) is not divisible by n_head ({config.n_head}). MHA performance might vary.")
+
+            d_new = config.gating_d_new
+            self.gated_reduction = TimeStepGatedReduction(config.n_embd, d_new, config.bias)
+            self.final_ln_lm_head_dim = d_new
+            print(f"--- Dimensions into Blocks: L={config.block_size}, D={self.final_ln_lm_head_dim} (Reduced) ---")
+        else:
+             print(f"--- Dimensions into Blocks: L={config.block_size}, D={self.final_ln_lm_head_dim} (Standard) ---")
+
+        # --- Transformer Components ---
+        self.transformer = nn.ModuleDict(dict(
+            wte = nn.Embedding(config.vocab_size, config.n_embd),
+            wpe = nn.Embedding(config.block_size, config.n_embd),
+            drop = nn.Dropout(config.dropout),
+            # Blocks will be added below
+            ln_f = LayerNorm(self.final_ln_lm_head_dim, bias=config.bias), # Final layer norm operates on the output dimension
+        ))
+
+        # --- Build Transformer Blocks ---
+        print(f"--- Building {config.n_layer} Transformer Blocks (Operating Dim: {self.final_ln_lm_head_dim}) ---")
+        blocks = []
+        for i in range(config.n_layer):
+            # Pass the determined operating dimension to each block
+            block = Block(config, operating_dim=self.final_ln_lm_head_dim)
+            blocks.append(block)
+        self.transformer['h'] = nn.ModuleList(blocks)
+
+        # --- Language Model Head ---
+        self.lm_head = nn.Linear(self.final_ln_lm_head_dim, config.vocab_size, bias=False)
+        print(f"--- Final LN & LM Head on dim: {self.final_ln_lm_head_dim} ---")
+
+        # --- Weight Tying ---
+        # Only tie weights if NOT using gated reduction AND the dimensions match
+        # (which they should if not using reduction)
+        if not self.operates_on_reduced_dim and self.final_ln_lm_head_dim == config.n_embd:
+            self.transformer.wte.weight = self.lm_head.weight
+            print("Weight tying enabled (Standard GPT mode).")
+        else:
+            reason = "Gated Reduction is used" if self.operates_on_reduced_dim else f"Dim mismatch (should not happen in standard mode: final={self.final_ln_lm_head_dim}, n_embd={config.n_embd})"
+            print(f"Weight tying disabled ({reason}).")
+        # Sanity check print
+        # print(f"DEBUG: Are lm_head/wte weights same object? {self.lm_head.weight is self.transformer.wte.weight}")
+
+        # Init all weights
+        self.apply(self._init_weights)
+        # Apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+
+        print("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+
+    def get_num_params(self, non_embedding=True):
+        """
+        Return the number of parameters in the model.
+        For non-embedding count (default), the position embeddings get subtracted.
+        The token embeddings would too, except due to Parameter Sharing they
+        count as přístupná already in the final layer, so we don't need to subtract them.
+        """
+        n_params = sum(p.numel() for p in self.parameters())
+        if non_embedding:
+            n_params -= self.transformer.wpe.weight.numel()
+        return n_params
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, LayerNorm):
+             # Initialize LayerNorm bias to zero if it exists
+             if module.bias is not None:
+                 torch.nn.init.zeros_(module.bias)
+             # Weight is initialized to ones by default in LayerNorm constructor
+
+
+    def forward(self, idx, targets=None):
+        device = idx.device
+        b, t = idx.size()
+        if t > self.config.block_size:
+             # Crop sequence length if longer than block_size
+             idx = idx[:, -self.config.block_size:]
+             t = self.config.block_size # Update t
+        if targets is not None and targets.shape[1] > self.config.block_size:
+             targets = targets[:, -self.config.block_size:]
+
+        # Ensure position indices are within bounds
+        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+
+        # Forward the GPT model itself
+        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd) -> broadcasts to (b, t, n_embd)
+        x = self.transformer.drop(tok_emb + pos_emb)
+
+        # Apply Time-Step Gated Reduction if enabled
+        if self.gated_reduction is not None:
+            x = self.gated_reduction(x) # Shape becomes (b, t, d_new)
+
+        # Pass through transformer blocks
+        for block in self.transformer.h:
+            x = block(x) # Shape remains (b, t, operating_dim)
+
+        # Final layer norm
+        x = self.transformer.ln_f(x) # Shape remains (b, t, operating_dim)
+
+        if targets is not None:
+            # if we are given some desired targets also calculate the loss
+            logits = self.lm_head(x) # Shape (b, t, vocab_size)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+        else:
+            # inference-time mini-optimization: only forward the lm_head on the very last position
+            # Note: This is only beneficial if T is large. For short sequences, computing for all T might be faster due to parallelism.
+            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            loss = None
+
+        return logits, loss
+
+    def crop_block_size(self, block_size):
+        # model surgery to decrease the block size if necessary
+        # e.g. we may load a pretrained model with block_size=1024,
+        # but want to use a smaller block_size=128 for some smaller downstream task
+        assert block_size <= self.config.block_size
+        current_max_block_size = self.config.block_size
+        self.config.block_size = block_size
+        self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
+        # Adjust the mask in CausalSelfAttention if using the slow path
+        for block in self.transformer.h:
+             # Only adjust if the attention layer has the 'bias' buffer (i.e., slow attention)
+             if hasattr(block.attn, 'bias') and block.attn.bias is not None:
+                 # Check if the buffer exists and has the expected shape before slicing
+                 if block.attn.bias.shape[-1] == current_max_block_size:
+                      block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
+                 else:
+                      print(f"Warning: MHA bias buffer shape {block.attn.bias.shape} does not match expected old block size {current_max_block_size}. Skipping resize.")
+
+
+    @classmethod
+    def from_pretrained(cls, model_type, override_args=None):
+        # This method is kept for compatibility but needs careful consideration
+        # if loading a model that *used* gated reduction vs one that didn't.
+        # Currently, it loads standard GPT-2 weights. Enabling gated reduction
+        # would likely require retraining or specific fine-tuning.
+        print(f"Loading weights from pretrained gpt: {model_type}")
+        if override_args is None: override_args = {}
+        # only dropout can be overridden see more notes below
+        assert all(k == 'dropout' for k in override_args)
+
+        from transformers import GPT2LMHeadModel
+        config_args = {
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+        }[model_type]
+        print("forcing vocab_size=50257, block_size=1024, bias=True")
+        config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
+        config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
+        config_args['bias'] = True # always True for GPT model checkpoints
+
+        # handle potential overrides AFTER setting defaults
+        if 'dropout' in override_args: config_args['dropout'] = override_args['dropout']
+
+        # --- Crucial: Decide on Gated Reduction for loaded model ---
+        # By default, standard GPT-2 models do NOT use gated reduction.
+        # If you want to load GPT-2 weights AND use gated reduction,
+        # you'd likely need to retrain or fine-tune significantly.
+        config_args['use_gated_reduction'] = override_args.get('use_gated_reduction', False)
+        config_args['gating_d_new'] = override_args.get('gating_d_new', None)
+
+        # create a from-scratch initialized minGPT model
+        print("Creating model with config:", config_args)
+        config = GPTConfig(**config_args)
+        model = GPT(config)
+        sd = model.state_dict()
+        sd_keys = sd.keys()
+        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, possibly created by slow attention
+
+        # init a huggingface/transformers model
+        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+        sd_hf = model_hf.state_dict()
+
+        # copy while ensuring all parameters are aligned and match in shape and name
+        sd_keys_hf = sd_hf.keys()
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these buffers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the name used in older versions of transformers
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla nn.Linear.
+        # this means that we have to transpose these weights when we import them
+        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+
+        warn_skip_gated = False
+        for k in sd_keys_hf:
+            if any(k.endswith(w) for w in transposed):
+                # special treatment for the Conv1D weights we need to transpose
+                assert sd_hf[k].shape[::-1] == sd[k].shape
+                with torch.no_grad():
+                    sd[k].copy_(sd_hf[k].t())
+            else:
+                # vanilla copy
+                if sd_hf[k].shape != sd[k].shape:
+                    # This WILL happen if use_gated_reduction=True, as the shapes won't match
+                    # for layers operating on d_new (e.g., LayerNorms, MLP projections after first, MHA projections).
+                    # Also, the lm_head and final ln_f will mismatch.
+                    if config.use_gated_reduction:
+                         if not warn_skip_gated: # Print warning only once
+                              print(f"Warning: Skipping parameter copy for keys due to shape mismatch caused by use_gated_reduction=True. These layers will remain randomly initialized: {k} (and others like it)")
+                              warn_skip_gated = True
+                         continue # Skip copying this parameter
+                    else:
+                        # If not using gated reduction, shapes should match. Raise error.
+                         raise ValueError(f"Shape mismatch for key {k}: HF={sd_hf[k].shape}, Model={sd[k].shape}. Ensure config matches pretrained model.")
+                else:
+                     with torch.no_grad():
+                          sd[k].copy_(sd_hf[k])
+
+        # Handle the gated reduction layer weights - they won't exist in sd_hf
+        if config.use_gated_reduction and model.gated_reduction is not None:
+            print("Warning: TimeStepGatedReduction layer weights are randomly initialized as they don't exist in standard GPT-2 checkpoints.")
+
+        return model
+
+    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
+        # start with all of the candidate parameters
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        # filter out those that do not require grad
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_groups = [
+            {'params': decay_params, 'weight_decay': weight_decay},
+            {'params': nodecay_params, 'weight_decay': 0.0}
+        ]
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nodecay_params = sum(p.numel() for p in nodecay_params)
+        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        # Create AdamW optimizer and use the fused version if it is available
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and device_type.startswith('cuda')
+        extra_args = dict(fused=True) if use_fused else dict()
+        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+        print(f"using fused AdamW: {use_fused}")
+
+        return optimizer
+
+    def estimate_mfu(self, fwdbwd_per_iter, dt):
+        """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
+        # Note: This estimate is for standard GPT-2 architecture.
+        # The MFU for the gated reduction variant might differ slightly,
+        # but the dominant cost is usually the Attention and MLP layers.
+        N = self.get_num_params()
+        cfg = self.config
+        L, H = cfg.n_layer, cfg.n_head
+        # Determine the dimension used in attention/MLP calculations
+        C = cfg.gating_d_new if cfg.use_gated_reduction else cfg.n_embd
+        Q = C // H if H > 0 else 0 # Head dimension
+        T = cfg.block_size
+
+        # flops calculation based on standard transformer estimates
+        # Attention: 4*B*T*C*C (QK^T + AV) - approx 2*B*T*C*(2*T*H*Q) = 4*B*T*C^2/H * T (check this) -> Karpathy uses 2*B*T*C* (2*C) for QKV + attn*V? Let's use standard estimate.
+        # MHA Flops: Roughly 2 * B * T * C * (2 * C) for QKV/Proj + 2 * B * T^2 * C for Attn Scores/Output = 4*B*T*C^2 + 2*B*T^2*C
+        # MLP Flops: Roughly 2 * B * T * C * (4 * C) + 2 * B * T * (4 * C) * C = 16 * B * T * C^2
+        # Total Flops per layer: Approx 4*B*T*C^2 + 2*B*T^2*C + 16*B*T*C^2 = 20*B*T*C^2 + 2*B*T^2*C
+        # Karpathy's estimate: 6*N + 12*L*H*Q*T simplifies things. Let's use that.
+        # 6*N accounts for matmuls in MLP/Projections. N = L*(4*C^2 + 4*C^2 + C^2 + C^2) + Embeddings ~ L*10*C^2
+        # 12*L*H*Q*T = 12*L*C*T accounts for attention computation.
+        # Let's stick to the simpler 6*N + 12*L*C*T estimate where C is the operating dim.
+        flops_per_token = 6*N + 12*L*C*T
+        flops_per_fwdbwd = flops_per_token * T
+        flops_per_iter = flops_per_fwdbwd * fwdbwd_per_iter # number of microsteps per iteration
+
+        # expressed using A100 peak FLOPS as baseline: 312 TFLOPS = 312e12
+        flops_achieved = flops_per_iter * (1.0/dt) # per second
+        flops_promised = 312e12 # A100 GPU bfloat16 peak flops
+        mfu = flops_achieved / flops_promised
+        # Print a warning if gated reduction is used, as estimate might be less accurate
+        if cfg.use_gated_reduction:
+            print("Warning: MFU estimate based on standard GPT architecture; may be less accurate for Gated Reduction variant.")
+        return mfu
+
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+        """
+        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
+        the sequence max_new_tokens times, feeding the predictions back into the model each time.
+        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        """
+        self.eval() # Ensure model is in evaluation mode
+        for _ in range(max_new_tokens):
+            # if the sequence context is growing too long we must crop it at block_size
+            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
+            # forward the model to get the logits for the index in the sequence
+            logits, _ = self(idx_cond) # We only need logits, ignore loss
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf') # Apply top-k filtering
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # sample from the distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        self.train() # Set model back to training mode if it was before
+        return idx
+
+# --- HellaSwag evaluation logic (Unchanged, should work fine) ---
+# (Ensure evaluate_hellaswag determines its own context and uses float32)
+def get_most_likely_row(tokens, mask, logits):
+    """ Given tokens, mask, and logits, find the index of the row with the lowest average loss. """
+    if logits.shape[1] <= 1:
+        #print(f"Warning (get_most_likely_row): Logits seq len <= 1.")
+        return 0 # Cannot compute loss on sequence of length 1 or less
+
+    # Shift logits and tokens for next token prediction loss
+    shift_logits = logits[..., :-1, :].contiguous() # Predict T based on T-1
+    shift_tokens = tokens[..., 1:].contiguous()     # Actual token at T
+
+    # Ensure dimensions are compatible after shifting
+    if shift_logits.shape[1] == 0 or shift_tokens.shape[1] == 0:
+        # This can happen if the original sequence length was 1
+        #print(f"Warning: shift_logits or shift_tokens empty after shifting (original len was {logits.shape[1]}).")
+        return 0
+
+    # Calculate cross-entropy loss for each token position
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1))
+    flat_shift_tokens = shift_tokens.view(-1)
+
+    # Check for shape mismatch before calculating loss
+    if flat_shift_logits.shape[0] != flat_shift_tokens.shape[0]:
+         print(f"ERROR (get_most_likely_row): Size mismatch before loss calculation! Logits: {flat_shift_logits.shape}, Tokens: {flat_shift_tokens.shape}")
+         # Potentially caused by incorrect padding or slicing earlier
+         return 0 # Cannot proceed
+
     try:
-        model.crop_block_size(block_size)
-        model_args['block_size'] = block_size # Update configuration recording
-    except NotImplementedError as e:
-        print(f"Warning: Could not crop block size - {e}")
-    except AttributeError:
-         print("Warning: Model does not have 'crop_block_size' method. Skipping block size cropping.")
-
-
-model.to(device) # Move model to device
-
-# ---- Optimizer and Scaler ----
-# Determine scaler enabled status based on the effective dtype being used
-scaler_enabled = (dtype == 'float16') # Enable scaler only if using float16
-scaler = torch.amp.GradScaler(enabled=scaler_enabled)
-print(f"Using GradScaler: {scaler_enabled}")
-
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
-if init_from == 'resume' and 'optimizer' in checkpoint: # Check if optimizer state exists
-    try:
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        # Compute loss per token, don't reduce yet
+        shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')
     except Exception as e:
-        print(f"Warning: Failed to load optimizer state dict: {e}. Initializing optimizer from scratch.")
-checkpoint = None # free up memory
-# -----------------------------
+        print(f"ERROR during CE in get_most_likely_row: {e}")
+        # Print shapes for debugging
+        print(f"  Logits shape: {flat_shift_logits.shape}, Tokens shape: {flat_shift_tokens.shape}")
+        return 0 # Return a default index on error
 
-# ---- Compile Model (Optional) ----
-if compile:
-    # Check if device supports compile, disable if not (e.g., MPS)
-    if device_type not in ['cuda']: # Add other supported types if needed
-         print(f"Warning: Disabling torch.compile as it's not fully supported on device '{device_type}'.")
-         compile = False
-    else:
-         print("compiling the model... (takes a ~minute)")
-         unoptimized_model = model
-         try:
-             # Suggested compile options for potentially better performance
-             model = torch.compile(model, mode="reduce-overhead", fullgraph=True) # requires PyTorch 2.0+
-             print("Model compiled successfully.")
-         except Exception as e:
-             print(f"Warning: Model compilation failed: {e}. Proceeding without compilation.")
-             compile = False # Fallback if compilation fails
-             model = unoptimized_model # Use the original model
-# -------------------------------
+    # Reshape losses to (batch_size, sequence_length - 1)
+    shift_losses = shift_losses.view(tokens.size(0), -1)
 
-# ---- Wrap model in DDP ----
-if ddp:
-    # Check for MPS incompatibility again before wrapping
-    if device_type == 'mps':
-         print("ERROR: Cannot use DDP with MPS device due to backend limitations.")
-         exit(1) # Exit if DDP+MPS requested
-    # find_unused_parameters might be needed if gating layers aren't used in every forward pass under certain conditions (unlikely here)
-    model = DDP(model, device_ids=[ddp_local_rank] if device_type == 'cuda' else None, find_unused_parameters=False)
-# --------------------------
+    # Create a mask for the shifted losses (ignore loss where mask is 0)
+    shift_mask = mask[..., 1:].contiguous() # Mask corresponds to shift_tokens
 
-# ---- Loss Estimation Function ----
+    # Apply the mask (zero out losses for padding tokens or context tokens)
+    masked_shift_losses = shift_losses * shift_mask
+
+    # Sum the loss for each row (completion)
+    sum_loss = masked_shift_losses.sum(dim=1)
+
+    # Count the number of tokens contributing to the loss in each row
+    num_loss_tokens = shift_mask.sum(dim=1)
+
+    # Calculate average loss per row, handle division by zero if a row had no valid tokens
+    avg_loss = sum_loss / (num_loss_tokens + 1e-6) # Add epsilon for stability
+    avg_loss[num_loss_tokens == 0] = float('inf') # Assign infinite loss if no tokens were considered
+
+    # Find the row index with the minimum average loss
+    pred_norm = avg_loss.argmin().item()
+    return pred_norm
+
+
 @torch.no_grad()
-def estimate_loss(eval_model): # Pass the model to evaluate
-    out = {}
-    eval_model.eval() # Set model to eval mode INSIDE the function
-    model_device = next(eval_model.parameters()).device # Get device from the passed model
-    device_type = 'cuda' if 'cuda' in str(model_device) else ('mps' if 'mps' in str(model_device) else 'cpu')
+def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+    """ Evaluates the model performance on the HellaSwag dataset. """
+    assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding object"
+    print(f"Evaluating HellaSwag from {hellaswag_path}...")
+    num_correct_norm = 0
+    num_total = 0
 
-    # Determine autocast context based on the evaluation model's device
-    if device_type == 'cuda':
-        global dtype # Access the global dtype setting ('bfloat16' or 'float16')
-        ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)
-    else: # CPU or MPS
-        eval_ctx = nullcontext()
-
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters, device=model_device) # Use model's device for losses tensor
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            # Move batch data explicitly to model's device just in case get_batch doesn't
-            X, Y = X.to(model_device), Y.to(model_device)
-            with eval_ctx:
-                logits, loss = eval_model(X, Y) # Use the passed model
-            if loss is not None and not torch.isnan(loss): losses[k] = loss.item()
-            else: losses[k] = float('nan') # Assign NaN if loss is None or NaN
-        valid_losses = losses[~torch.isnan(losses)] # Filter out NaNs
-        out[split] = valid_losses.mean().item() if len(valid_losses) > 0 else float('inf') # Use .item() for single value tensor
-
-    # HellaSwag evaluation on master process
-    # Pass the unwrapped model to evaluate_hellaswag
-    if hellaswag and master_process:
-        # Ensure we have the raw model for single-GPU evaluation functions
-        raw_eval_model = eval_model.module if isinstance(eval_model, DDP) else eval_model
-        try:
-             hellaswag_acc = evaluate_hellaswag(raw_eval_model, enc, hellaswag_path) # Pass path only
-             out['hellaswag'] = hellaswag_acc if hellaswag_acc is not None else -1.0 # Handle potential None return
-        except NameError: # Handle case where 'enc' might not be defined (if tiktoken failed)
-             print("Warning: HellaSwag evaluation skipped because tokenizer ('enc') is not available.")
-             out['hellaswag'] = -1.0
-        except Exception as e:
-             print(f"Error during HellaSwag evaluation: {e}")
-             out['hellaswag'] = -1.0 # Report error state
-
-    elif hellaswag: # Non-master processes report 0 or default
-         out['hellaswag'] = 0.0 # Or perhaps None/NaN to indicate it wasn't calculated?
-
-    eval_model.train() # Set model back to train mode before exiting
-    return out
-# -----------------------------
-
-# ---- LR Scheduler ----
-def get_lr(it):
-    if not decay_lr: return learning_rate # Return fixed LR if decay is off
-    # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
-        return learning_rate * (it + 1) / (warmup_iters + 1) # Use it+1 and warmup_iters+1 for smoother start
-    # 2) if it > lr_decay_iters, return min learning rate
-    if it >= lr_decay_iters: # Use >= to include the last step
-        return min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-    return min_lr + coeff * (learning_rate - min_lr)
-# --------------------
-
-# ---- Logging Setup ----
-if wandb_log and master_process:
-    import wandb
-    # Ensure config passed to wandb includes the final gating settings
-    run_config = config.copy() # Use the global config dict which includes derived gating_d_new
-    # Add any specific derived values if needed (already in config dict)
-    print("Logging config to WandB:")
-    print(run_config)
-    try:
-        wandb.init(project=wandb_project, name=wandb_run_name, config=run_config)
-    except Exception as e:
-        print(f"Error initializing WandB: {e}. Disabling WandB logging.")
-        wandb_log = False # Disable logging if init fails
-# -----------------------
-
-# ---- Training Loop ----
-X, Y = get_batch('train') # Fetch first batch
-t0 = time.time()
-local_iter_num = 0 # number of iterations run on this process (for MFU warmup)
-raw_model = model.module if ddp else model # Get the unwrapped model for saving/MFU
-running_mfu = -1.0
-print(f"\nStarting training loop from iteration {iter_num}...")
-while True:
-
-    # Determine and set LR for the current iteration
-    lr = get_lr(iter_num)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-    # Evaluate loss and save checkpoints at eval_interval
-    if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss(model) # Pass the potentially DDP-wrapped model
-        print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
-        if hellaswag and 'hellaswag' in losses: # Check if key exists
-            print_str += f", HellaSwag Acc: {losses['hellaswag']:.4f}"
-        print(print_str)
-
-        if wandb_log:
+    # Attempt to download HellaSwag validation set if not found
+    if not os.path.exists(hellaswag_path):
+        print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
+        data_dir = os.path.dirname(hellaswag_path) or '.' # Use current dir if path has no dirname
+        if not os.path.exists(data_dir):
             try:
-                 log_data = { "iter": iter_num, "train/loss": losses.get('train', float('nan')), "val/loss": losses.get('val', float('nan')), "lr": lr, "mfu": running_mfu*100 }
-                 if hellaswag and 'hellaswag' in losses: log_data['val/hellaswag_acc'] = losses['hellaswag']
-                 wandb.log(log_data)
-            except Exception as e:
-                 print(f"WandB logging failed: {e}")
+                os.makedirs(data_dir)
+            except OSError as e:
+                print(f"Error creating directory {data_dir}: {e}")
+                return -1.0 # Cannot proceed if directory creation fails
 
-        current_val_loss = losses.get('val', float('inf')) # Handle case where val loss might be NaN/missing
-        # Save checkpoint if it's the best so far or always_save is true
-        if current_val_loss < best_val_loss or always_save_checkpoint:
-            best_val_loss = current_val_loss if current_val_loss != float('inf') else best_val_loss # Only update if valid loss
-            if iter_num > 0: # Don't save initial checkpoint at iter 0 unless requested?
-                # Save the unwrapped model's state_dict
-                checkpoint = {
-                    'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'model_args': model_args, # Save the args used to init the model
-                    'iter_num': iter_num,
-                    'best_val_loss': best_val_loss,
-                    'config': config, # Save the full config used for this run
-                }
-                print(f"saving checkpoint to {out_dir} (val_loss: {best_val_loss:.4f})")
-                ckpt_path = os.path.join(out_dir, 'ckpt.pt')
-                # Save atomically (save to temp file, then rename)
-                temp_ckpt_path = ckpt_path + ".tmp"
-                torch.save(checkpoint, temp_ckpt_path)
-                os.rename(temp_ckpt_path, ckpt_path) # Atomic rename
-    if iter_num == 0 and eval_only:
-        print("eval_only=True, exiting after first evaluation.")
-        break
+        val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
+        print(f"Attempting download from {val_url}...")
+        import requests
+        try:
+            with requests.get(val_url, stream=True) as r:
+                r.raise_for_status() # Raise an exception for bad status codes
+                with open(hellaswag_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print("Download successful.")
+        except requests.exceptions.RequestException as e:
+            print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
+            # Clean up potentially incomplete file
+            if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
+            return -1.0 # Indicate failure
+        except Exception as e:
+             print(f"An unexpected error occurred during download: {e}")
+             if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
+             return -1.0
 
-    # ----- Training Step -----
-    model.train() # Ensure model is in training mode
-    # Forward backward update with gradient accumulation
-    for micro_step in range(gradient_accumulation_steps):
-        # DDP specific logic for gradient sync
-        if ddp:
-            # only sync gradients on the last micro-step.
-            # Note: While model.no_sync() context manager is recommended,
-            # setting require_backward_grad_sync is a common alternative.
-            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+    # Determine device and evaluation context
+    model_device = next(model.parameters()).device
+    device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+    eval_ctx = nullcontext() # Default context (no AMP)
+    eval_dtype = torch.float32 # Use float32 for stability in evaluation metrics like loss
 
-        with ctx: # Apply autocast context
-            logits, loss = model(X, Y)
-            # Check for NaN loss immediately after forward pass
-            if torch.isnan(loss):
-                 print(f"ERROR: Loss is NaN at iter {iter_num}, micro_step {micro_step}. Forward pass produced NaN.")
-                 print(f"  Logits sample (sum): {logits.sum().item() if logits is not None else 'N/A'}")
-                 # Consider additional debugging: check inputs X, Y, model params for NaNs
-                 # For now, exit to prevent further issues.
-                 exit(1)
+    if device_type == 'cuda':
+        # Use autocast for potential speedup, but ensure critical ops use float32 if needed
+        print("DEBUG: Using torch.amp.autocast(device_type='cuda', dtype=float16) for HellaSwag model forward pass.")
+        # Note: Loss calculation inside get_most_likely_row should still be stable enough with autocast context
+        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float16) # Use float16 for speed
 
-            loss = loss / gradient_accumulation_steps # Scale loss for accumulation
+    try:
+        with open(hellaswag_path, 'r', encoding='utf-8') as f:
+            # Use tqdm for progress bar
+            for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
+                try:
+                    example = json.loads(line)
+                except json.JSONDecodeError:
+                    print(f"Warning: Skipping invalid JSON line: {line.strip()}")
+                    continue
 
-        # Immediately async prefetch next batch while CPU is potentially free
-        # Note: get_batch itself needs to be efficient for this to be useful
-        X_next, Y_next = get_batch('train')
+                num_total += 1
+                ctx = example['ctx']         # The context string
+                label = example['label']     # The correct completion index (0-3)
+                endings = example['endings'] # A list of four possible completion strings
 
-        # Backward pass with scaler
-        scaler.scale(loss).backward()
+                # Encode context and each completion
+                try:
+                    ctx_tokens = enc.encode(ctx)
+                    if not ctx_tokens:
+                        #print(f"Warning: Skipping example with empty context: {ctx}")
+                        num_total -= 1 # Don't count examples we skip
+                        continue
+                except Exception as e:
+                     print(f"Warning: Skipping example due to encoding error in context: {e}")
+                     num_total -= 1
+                     continue
 
-        # Move prefetched batch to current batch variables
-        X, Y = X_next, Y_next
-    # ----- End Micro-steps -----
 
-    # Gradient Clipping (after accumulation, before optimizer step)
-    if grad_clip > 0.0:
-        scaler.unscale_(optimizer) # Need to unscale gradients before clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                tok_rows = []
+                mask_rows = []
 
-    # Optimizer Step (advances model parameters)
-    scaler.step(optimizer)
-    scaler.update() # Update scaler for next iteration
-    # Flush gradients after optimizer step
-    optimizer.zero_grad(set_to_none=True)
+                for end in endings:
+                    try:
+                        completion_tokens = enc.encode(end)
+                    except Exception as e:
+                         print(f"Warning: Encoding error in completion, skipping this ending: {e}")
+                         completion_tokens = [] # Treat as empty if encoding fails
 
-    # Timing and Logging
-    t1 = time.time(); dt = t1 - t0; t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        # get loss as float. note: this is a CPU-GPU sync point
-        # scale up to get the approximate loss summed over accumulation steps
-        lossf = loss.item() * gradient_accumulation_steps
-        if local_iter_num >= 5: # let the training loop settle a bit (e.g. MFU calculation)
-            # Use the unwrapped model to estimate MFU
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        # Log step time, loss, and MFU
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}% lr {lr:.2e}")
+                    # Combine context and completion tokens
+                    tok = ctx_tokens + completion_tokens
+                    # Create mask: 0 for context, 1 for completion
+                    mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
 
-    iter_num += 1
-    local_iter_num += 1
+                    # --- Truncation Logic ---
+                    # Ensure the combined sequence fits within the model's block size
+                    if len(tok) > model.config.block_size:
+                        # Prioritize keeping the full completion if possible
+                        num_comp = len(completion_tokens)
+                        max_ctx = model.config.block_size - num_comp
 
-    # Termination condition
-    if iter_num > max_iters:
-        print(f"Reached max_iters ({max_iters}). Stopping training.")
-        break
-# ---------------------
+                        if max_ctx < 0:
+                            # Completion itself is too long, truncate completion
+                            #print(f"Warning: Completion longer than block size ({num_comp} > {model.config.block_size}). Truncating completion.")
+                            completion_tokens = completion_tokens[:model.config.block_size]
+                            tok = completion_tokens # Use only truncated completion
+                            mask = [1] * len(tok) # Mask is all 1s
+                            max_ctx = 0 # No context possible
+                        else:
+                            # Truncate context from the left
+                            start_idx = max(0, len(ctx_tokens) - max_ctx)
+                            trunc_ctx = ctx_tokens[start_idx:]
+                            tok = trunc_ctx + completion_tokens
+                            mask = [0]*len(trunc_ctx) + [1]*len(completion_tokens)
 
-# ---- Cleanup ----
-if ddp:
-    destroy_process_group()
-# ---------------
+                        # Final check if truncation still resulted in overflow (shouldn't happen with logic above)
+                        if len(tok) > model.config.block_size:
+                            #print(f"Warning: Sequence still too long after truncation ({len(tok)}). Taking last {model.config.block_size} tokens.")
+                            tok = tok[-model.config.block_size:]
+                            mask = mask[-model.config.block_size:]
 
-print("Training finished.")
-# Final save? Optionally save the final model state regardless of validation loss
-if master_process and not eval_only:
-     final_ckpt_path = os.path.join(out_dir, 'ckpt_final.pt')
-     print(f"Saving final model checkpoint to {final_ckpt_path}")
-     checkpoint = {
-         'model': raw_model.state_dict(),
-         'optimizer': optimizer.state_dict(),
-         'model_args': model_args,
-         'iter_num': iter_num,
-         'best_val_loss': best_val_loss,
-         'config': config,
-     }
-     temp_ckpt_path = final_ckpt_path + ".tmp"
-     torch.save(checkpoint, temp_ckpt_path)
-     os.rename(temp_ckpt_path, final_ckpt_path)
+                    # Ensure minimum length of 2 for loss calculation (prevents issues with seq len 1)
+                    if len(tok) < 2:
+                        # Pad sequence to length 2 if it's 0 or 1
+                        pad_len = 2 - len(tok)
+                        tok = tok + ([enc.eot_token] * pad_len) # Use a padding token like EOT if available, else 0
+                        mask = mask + ([0] * pad_len) # Mask for padding is 0
+
+
+                    # Append tensors for this completion
+                    tok_rows.append(torch.tensor(tok, dtype=torch.long))
+                    mask_rows.append(torch.tensor(mask, dtype=torch.long))
+
+                if not tok_rows: # If all endings failed encoding or context was empty
+                     continue
+
+                # --- Batching and Padding ---
+                # Pad all sequences in this batch to the length of the longest sequence
+                max_len = max(len(r) for r in tok_rows)
+                # Ensure max_len is at least 2, even if all sequences were shorter (due to min length handling)
+                max_len = max(2, max_len)
+
+                # Create padded tensors initialized with zeros (or a pad token id)
+                # Using 0 assumes 0 is not a valid token or is used for padding.
+                # If enc.pad_token_id exists, use it, otherwise default to 0 or enc.eot_token.
+                pad_token_id = getattr(enc, 'pad_token_id', enc.eot_token if hasattr(enc, 'eot_token') else 0)
+
+                tokens = torch.full((len(tok_rows), max_len), pad_token_id, dtype=torch.long)
+                mask_t = torch.zeros((len(tok_rows), max_len), dtype=torch.long) # Renamed mask tensor
+
+                for i, (tr, mr) in enumerate(zip(tok_rows, mask_rows)):
+                    seq_len = len(tr)
+                    tokens[i, :seq_len] = tr
+                    mask_t[i, :seq_len] = mr # Use the correctly named mask tensor
+
+                # Move tensors to the model's device
+                tokens = tokens.to(model_device)
+                mask_t = mask_t.to(model_device) # Use the correctly named mask tensor
+
+                # --- Model Inference ---
+                model.eval() # Ensure model is in eval mode
+                with eval_ctx: # Apply AMP context if enabled
+                    logits, _ = model(tokens) # Get logits for all positions
+
+                # Check for NaNs/Infs in logits, which indicate instability
+                if torch.isnan(logits).any() or torch.isinf(logits).any():
+                    print(f"ERROR: NaNs or Infs detected in HellaSwag logits for example context: {ctx[:50]}...")
+                    # Decide how to handle - skip example? return default prediction?
+                    # For now, let's assume prediction is incorrect (or assign random/default)
+                    pred_norm = -1 # Assign invalid prediction
+                else:
+                    # Calculate the most likely completion based on lowest average loss
+                    try:
+                        pred_norm = get_most_likely_row(tokens, mask_t, logits) # Pass the mask tensor
+                    except Exception as e:
+                         print(f"ERROR occurred inside get_most_likely_row: {e}")
+                         import traceback
+                         traceback.print_exc()
+                         pred_norm = -1 # Assign invalid prediction on error
+
+                # --- Accuracy Calculation ---
+                if pred_norm == label:
+                    num_correct_norm += 1
+
+    except FileNotFoundError:
+        print(f"Error: HellaSwag validation file not found at {hellaswag_path} even after download attempt.")
+        return -1.0
+    except Exception as e:
+        print(f"An unexpected error occurred during the HellaSwag evaluation loop: {e}")
+        import traceback
+        traceback.print_exc()
+        return -1.0 # Indicate failure
+
+    # Calculate final accuracy
+    if num_total == 0:
+        print("Warning: No examples were processed during HellaSwag evaluation.")
+        return 0.0
+    acc_norm = float(num_correct_norm) / num_total
+    print(f"HellaSwag Accuracy: {acc_norm*100:.2f}% ({num_correct_norm}/{num_total})")
+    return acc_norm
+
+
+# --- Example Usage / Testing Block ---
+if __name__ == '__main__':
+
+    # --- Configuration Options ---
+
+    # Option 1: Small Model with Gated Reduction
+    use_gated = True
+    d_new = 64 # Target dimension after gating (must be <= n_embd)
+    config_args = dict(
+        block_size=128, vocab_size=50257, n_layer=4, n_head=4, n_embd=128,
+        dropout=0.1, bias=True,
+        use_gated_reduction=use_gated,
+        d_reduction_factor=3 if use_gated else 1, # Set d_new only if using gating
+    )
+
+    # Option 2: Small Model Standard GPT (No Gating)
+    # config_args = dict(
+    #     block_size=128, vocab_size=50257, n_layer=4, n_head=4, n_embd=128,
+    #     dropout=0.1, bias=True,
+    #     use_gated_reduction=False,
+    #     gating_d_new=None,
+    # )
+
+    # Option 3: GPT-2 Base size with Gated Reduction (Example)
+    # use_gated = True
+    # d_new = 384 # Example: Reduce 768 -> 384 (Divisible by n_head=12)
+    # config_args = dict(
+    #     block_size=1024, vocab_size=50257, n_layer=12, n_head=12, n_embd=768,
+    #     dropout=0.0, bias=True, # GPT-2 defaults
+    #     use_gated_reduction=use_gated,
+    #     gating_d_new=d_new if use_gated else None,
+    # )
+
+    # Create config object
+    gpt_config = GPTConfig(**config_args)
+    print("\n--- Model Configuration ---")
+    print(gpt_config)
+
+    # --- Initialize Model ---
+    print("\n--- Initializing Model ---")
+    model = GPT(gpt_config)
+
+    # --- Testing ---
+    print("\n--- Testing Forward/Backward Pass ---")
+    B = 4
+    T = gpt_config.block_size
+    T_short = T // 2 if T > 1 else 1 # Ensure T_short is at least 1
+
+    dummy_input_full = torch.randint(0, gpt_config.vocab_size, (B, T))
+    dummy_targets_full = torch.randint(0, gpt_config.vocab_size, (B, T))
+    # Adjust targets to avoid -1 index if ignore_index is used (though not strictly necessary here)
+    dummy_targets_full[dummy_targets_full == -1] = 0
+
+    dummy_input_short = torch.randint(0, gpt_config.vocab_size, (B, T_short))
+    dummy_targets_short = torch.randint(0, gpt_config.vocab_size, (B, T_short))
+    dummy_targets_short[dummy_targets_short == -1] = 0
+
+    # Determine device
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        # Check if running in distributed environment, default to CPU if so
+        device = 'mps' if "RANK" not in os.environ else 'cpu'
+    else:
+        device = 'cpu'
+
+    print(f"Using device: {device}")
+    model.to(device)
+
+    # Create optimizer
+    optimizer = model.configure_optimizers(weight_decay=1e-1, learning_rate=1e-4, betas=(0.9, 0.95), device_type=device)
+
+    # Test with different sequence lengths
+    for seq_len_label, dummy_input, dummy_targets in [
+        (f"T = {T}", dummy_input_full, dummy_targets_full),
+        (f"T = {T_short}", dummy_input_short, dummy_targets_short)
+    ]:
+        print(f"\nTesting with {seq_len_label}...")
+        dummy_input = dummy_input.to(device)
+        dummy_targets = dummy_targets.to(device)
+
+        try:
+            model.train() # Set to train mode for dropout, etc.
+            optimizer.zero_grad(set_to_none=True) # More efficient zeroing
+
+            # Autocast for mixed precision if on CUDA
+            ctx = nullcontext()
+            if device == 'cuda':
+                 ctx = torch.amp.autocast(device_type=device, dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16)
+
+            with ctx:
+                logits, loss = model(dummy_input, dummy_targets)
+
+            print("Forward pass successful!")
+            print(f"  Input shape:  {dummy_input.shape}")
+            print(f"  Logits shape: {logits.shape}") # Should be (B, T, VocabSize)
+
+            if loss is not None:
+                print(f"  Loss: {loss.item():.4f}")
+                # Scaler for mixed precision
+                if device == 'cuda' and isinstance(ctx, torch.amp.autocast):
+                     # Basic example without gradient scaler - usually needed for stability
+                     # For proper training, use torch.cuda.amp.GradScaler
+                     loss.backward()
+                     print("Backward pass attempted (without scaler).")
+                else:
+                     loss.backward()
+                     print("Backward pass successful!")
+
+                # Check gradients (optional)
+                # grad_norm = 0.0
+                # for p in model.parameters():
+                #     if p.grad is not None:
+                #         grad_norm += p.grad.detach().data.norm(2).item() ** 2
+                # grad_norm = grad_norm ** 0.5
+                # print(f"  Gradient norm: {grad_norm:.4f}")
+
+                optimizer.step() # Update weights
+                print("Optimizer step successful!")
+            else:
+                print("  Loss is None (likely inference mode in forward pass).")
+
+        except Exception as e:
+            print(f"\n !!! Error during Forward/Backward ({seq_len_label}) !!!")
+            print(e)
+            import traceback
+            traceback.print_exc()
+            # Break the loop on error? Or continue? Continue for now.
+
+    # --- Test Generation ---
+    print("\n--- Testing Generation ---")
+    try:
+        model.eval() # Set to evaluation mode
+        start_ids = torch.randint(0, gpt_config.vocab_size, (1, 10), device=device) # Example start sequence
+        print(f"  Generating from start sequence shape: {start_ids.shape}")
+        generated_ids = model.generate(start_ids, max_new_tokens=20, temperature=0.8, top_k=5)
+        print("Generation successful!")
+        print(f"  Generated sequence shape: {generated_ids.shape}") # Should be (1, 10 + 20)
+    except Exception as e:
+        print("\n !!! Error during Generation !!!")
+        print(e)
+        import traceback
+        traceback.print_exc()
+
+    # --- Test HellaSwag Evaluation ---
+    print("\n--- Testing HellaSwag ---")
+    try:
+        # Attempt to import tiktoken
+        import tiktoken
+        enc = tiktoken.get_encoding("gpt2") # Get the tokenizer
+        print("Tiktoken loaded successfully.")
+
+        # Define path to HellaSwag validation file
+        # Assumes 'data/hellaswag/' directory structure relative to script location
+        script_dir = os.path.dirname(__file__) if "__file__" in locals() else '.'
+        hs_path = os.path.join(script_dir, 'data', 'hellaswag', 'hellaswag_val.jsonl')
+
+        # Run evaluation
+        accuracy = evaluate_hellaswag(model, enc, hs_path)
+        print(f"HellaSwag evaluation finished. Accuracy: {accuracy:.4f}")
+
+    except ImportError:
+        print("tiktoken not installed, skipping HellaSwag evaluation.")
+        print("Install tiktoken: pip install tiktoken")
+    except FileNotFoundError:
+         print(f"HellaSwag file not found at expected location ({hs_path}), skipping.")
+         print("Ensure the file exists or the download works.")
+    except Exception as e:
+        print(f"\n !!! Error during HellaSwag Evaluation !!!")
+        print(e)
+        import traceback
+        traceback.print_exc()
+
+    print("\n--- Model Testing Complete ---")
