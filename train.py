@@ -49,13 +49,16 @@ batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch si
 block_size = 1024
 # model
 n_layer = 12
-user_config = input("Which Config? (16/12) ")
+user_config = input("Which Config? (16/12/reduc_2) ")
 if user_config == "12":
     n_head = 12
     d_reduction_factor = 4
 elif user_config == "16":
     n_head = 16
     d_reduction_factor = 3
+elif user_config == "reduc_2":
+    n_head = 16
+    d_reduction_factor = 2
 else:
     print("invalid config")
     exit(1)
