@@ -327,43 +327,41 @@ class GPT(nn.Module):
     def forward(self, idx, targets=None):
         device = idx.device
         b, t = idx.size()
+        # Crop sequence if necessary
         if t > self.config.block_size:
-             # Crop sequence length if longer than block_size
-             idx = idx[:, -self.config.block_size:]
-             t = self.config.block_size # Update t
+            idx = idx[:, -self.config.block_size:]
+            t = self.config.block_size
         if targets is not None and targets.shape[1] > self.config.block_size:
-             targets = targets[:, -self.config.block_size:]
+            targets = targets[:, -self.config.block_size:]
 
-        # Ensure position indices are within bounds
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+        pos = torch.arange(0, t, dtype=torch.long, device=device)
 
-        # Forward the GPT model itself
-        tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd) -> broadcasts to (b, t, n_embd)
+        # --- Embeddings ---
+        tok_emb = self.transformer.wte(idx)
+        pos_emb = self.transformer.wpe(pos)
         x = self.transformer.drop(tok_emb + pos_emb)
 
-        # Apply Time-Step Gated Reduction if enabled
+        # --- Optional Gated Reduction ---
         if self.gated_reduction is not None:
-            x = self.gated_reduction(x) # Shape becomes (b, t, d_new)
+            x = self.gated_reduction(x)
 
-        # Pass through transformer blocks
+        # --- Transformer Blocks ---
         for block in self.transformer.h:
-            x = block(x) # Shape remains (b, t, operating_dim)
+            x = block(x)
 
-        # Final layer norm
-        x = self.transformer.ln_f(x) # Shape remains (b, t, operating_dim)
+        # --- Final Layer Norm ---
+        x = self.transformer.ln_f(x)
 
+        # --- Logit Calculation (ALWAYS for full sequence) ---
+        logits = self.lm_head(x) # Shape: (b, t, vocab_size)
+
+        # --- Loss Calculation (Optional) ---
+        loss = None
         if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x) # Shape (b, t, vocab_size)
+            # Calculate loss ONLY if targets are provided
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            # Note: This is only beneficial if T is large. For short sequences, computing for all T might be faster due to parallelism.
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            loss = None
 
-        return logits, loss
+        return logits, loss # Return full logits, loss is None if targets were None
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
