@@ -559,12 +559,11 @@ class GPT(nn.Module):
         return idx
 
 # --- HellaSwag evaluation logic (Unchanged, should work fine) ---
-# (Ensure evaluate_hellaswag determines its own context and uses float32)
-def get_most_likely_row(tokens, mask, logits):
+def get_most_likely_row(tokens, mask, logits, debug_print=False): # Add debug_print flag
     """ Given tokens, mask, and logits, find the index of the row with the lowest average loss. """
     if logits.shape[1] <= 1:
-        #print(f"Warning (get_most_likely_row): Logits seq len <= 1.")
-        return 0 # Cannot compute loss on sequence of length 1 or less
+        # Cannot compute loss on sequence of length 1 or less
+        return 0
 
     # Shift logits and tokens for next token prediction loss
     shift_logits = logits[..., :-1, :].contiguous() # Predict T based on T-1
@@ -573,7 +572,6 @@ def get_most_likely_row(tokens, mask, logits):
     # Ensure dimensions are compatible after shifting
     if shift_logits.shape[1] == 0 or shift_tokens.shape[1] == 0:
         # This can happen if the original sequence length was 1
-        #print(f"Warning: shift_logits or shift_tokens empty after shifting (original len was {logits.shape[1]}).")
         return 0
 
     # Calculate cross-entropy loss for each token position
@@ -614,13 +612,18 @@ def get_most_likely_row(tokens, mask, logits):
     avg_loss = sum_loss / (num_loss_tokens + 1e-6) # Add epsilon for stability
     avg_loss[num_loss_tokens == 0] = float('inf') # Assign infinite loss if no tokens were considered
 
+    # --- Add Debug Print for Losses ---
+    if debug_print:
+        print(f"DEBUG: HellaSwag avg_loss values for first example: {avg_loss.tolist()}")
+    # --- End Debug Print ---
+
     # Find the row index with the minimum average loss
     pred_norm = avg_loss.argmin().item()
     return pred_norm
 
 
 @torch.no_grad()
-def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
+def evaluate_hellaswag(model: 'GPT', enc: Encoding, hellaswag_path='data/hellaswag/hellaswag_val.jsonl'):
     """ Evaluates the model performance on the HellaSwag dataset. """
     assert isinstance(enc, Encoding), "Encoder `enc` must be tiktoken Encoding object"
     print(f"Evaluating HellaSwag from {hellaswag_path}...")
@@ -640,7 +643,7 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
 
         val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
         print(f"Attempting download from {val_url}...")
-        import requests
+        # import requests # Moved import inside function
         try:
             with requests.get(val_url, stream=True) as r:
                 r.raise_for_status() # Raise an exception for bad status codes
@@ -650,9 +653,8 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
             print("Download successful.")
         except requests.exceptions.RequestException as e:
             print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
-            # Clean up potentially incomplete file
             if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
-            return -1.0 # Indicate failure
+            return -1.0
         except Exception as e:
              print(f"An unexpected error occurred during download: {e}")
              if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
@@ -661,19 +663,21 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
     # Determine device and evaluation context
     model_device = next(model.parameters()).device
     device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
-    eval_ctx = nullcontext() # Default context (no AMP)
-    eval_dtype = torch.float32 # Use float32 for stability in evaluation metrics like loss
 
+    # --- MODIFICATION HERE ---
+    # Force float32 context specifically for HellaSwag evaluation for stability
+    print(f"DEBUG: Forcing torch.float32 context for HellaSwag model forward pass (Device: {device_type}).")
     if device_type == 'cuda':
-        # Force float32 context specifically for HellaSwag evaluation for stability
-        print("DEBUG: Forcing torch.float32 context for HellaSwag model forward pass.")
+        # Use autocast BUT explicitly set dtype to float32
         eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float32) # FORCE FLOAT32
-    # else: # CPU uses float32 by default, no autocast needed
-    #    eval_ctx = nullcontext() # Already initialized above
+    else:
+        # No autocast needed for CPU, float32 is default
+        eval_ctx = nullcontext()
+    # --- END MODIFICATION ---
 
     try:
         with open(hellaswag_path, 'r', encoding='utf-8') as f:
-            # Use tqdm for progress bar
+            eval_counter = 0 # Add counter for debug prints
             for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
                 try:
                     example = json.loads(line)
@@ -682,22 +686,19 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
                     continue
 
                 num_total += 1
-                ctx = example['ctx']         # The context string
-                label = example['label']     # The correct completion index (0-3)
-                endings = example['endings'] # A list of four possible completion strings
+                ctx = example['ctx']
+                label = example['label']
+                endings = example['endings']
 
-                # Encode context and each completion
                 try:
                     ctx_tokens = enc.encode(ctx)
                     if not ctx_tokens:
-                        #print(f"Warning: Skipping example with empty context: {ctx}")
-                        num_total -= 1 # Don't count examples we skip
+                        num_total -= 1
                         continue
                 except Exception as e:
                      print(f"Warning: Skipping example due to encoding error in context: {e}")
                      num_total -= 1
                      continue
-
 
                 tok_rows = []
                 mask_rows = []
@@ -707,102 +708,82 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
                         completion_tokens = enc.encode(end)
                     except Exception as e:
                          print(f"Warning: Encoding error in completion, skipping this ending: {e}")
-                         completion_tokens = [] # Treat as empty if encoding fails
+                         completion_tokens = []
 
-                    # Combine context and completion tokens
                     tok = ctx_tokens + completion_tokens
-                    # Create mask: 0 for context, 1 for completion
                     mask = [0]*len(ctx_tokens) + [1]*len(completion_tokens)
 
-                    # --- Truncation Logic ---
-                    # Ensure the combined sequence fits within the model's block size
                     if len(tok) > model.config.block_size:
-                        # Prioritize keeping the full completion if possible
                         num_comp = len(completion_tokens)
                         max_ctx = model.config.block_size - num_comp
-
                         if max_ctx < 0:
-                            # Completion itself is too long, truncate completion
-                            #print(f"Warning: Completion longer than block size ({num_comp} > {model.config.block_size}). Truncating completion.")
                             completion_tokens = completion_tokens[:model.config.block_size]
-                            tok = completion_tokens # Use only truncated completion
-                            mask = [1] * len(tok) # Mask is all 1s
-                            max_ctx = 0 # No context possible
+                            tok = completion_tokens
+                            mask = [1] * len(tok)
+                            max_ctx = 0
                         else:
-                            # Truncate context from the left
                             start_idx = max(0, len(ctx_tokens) - max_ctx)
                             trunc_ctx = ctx_tokens[start_idx:]
                             tok = trunc_ctx + completion_tokens
                             mask = [0]*len(trunc_ctx) + [1]*len(completion_tokens)
-
-                        # Final check if truncation still resulted in overflow (shouldn't happen with logic above)
                         if len(tok) > model.config.block_size:
-                            #print(f"Warning: Sequence still too long after truncation ({len(tok)}). Taking last {model.config.block_size} tokens.")
                             tok = tok[-model.config.block_size:]
                             mask = mask[-model.config.block_size:]
 
-                    # Ensure minimum length of 2 for loss calculation (prevents issues with seq len 1)
                     if len(tok) < 2:
-                        # Pad sequence to length 2 if it's 0 or 1
                         pad_len = 2 - len(tok)
-                        tok = tok + ([enc.eot_token] * pad_len) # Use a padding token like EOT if available, else 0
-                        mask = mask + ([0] * pad_len) # Mask for padding is 0
+                        eot_token_id = getattr(enc, 'eot_token', 0) # Use EOT if available, else 0
+                        tok = tok + ([eot_token_id] * pad_len)
+                        mask = mask + ([0] * pad_len)
 
-
-                    # Append tensors for this completion
                     tok_rows.append(torch.tensor(tok, dtype=torch.long))
                     mask_rows.append(torch.tensor(mask, dtype=torch.long))
 
-                if not tok_rows: # If all endings failed encoding or context was empty
+                if not tok_rows:
                      continue
 
-                # --- Batching and Padding ---
-                # Pad all sequences in this batch to the length of the longest sequence
                 max_len = max(len(r) for r in tok_rows)
-                # Ensure max_len is at least 2, even if all sequences were shorter (due to min length handling)
                 max_len = max(2, max_len)
-
-                # Create padded tensors initialized with zeros (or a pad token id)
-                # Using 0 assumes 0 is not a valid token or is used for padding.
-                # If enc.pad_token_id exists, use it, otherwise default to 0 or enc.eot_token.
-                pad_token_id = getattr(enc, 'pad_token_id', enc.eot_token if hasattr(enc, 'eot_token') else 0)
+                pad_token_id = getattr(enc, 'pad_token_id', getattr(enc, 'eot_token', 0))
 
                 tokens = torch.full((len(tok_rows), max_len), pad_token_id, dtype=torch.long)
-                mask_t = torch.zeros((len(tok_rows), max_len), dtype=torch.long) # Renamed mask tensor
+                mask_t = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
 
                 for i, (tr, mr) in enumerate(zip(tok_rows, mask_rows)):
                     seq_len = len(tr)
                     tokens[i, :seq_len] = tr
-                    mask_t[i, :seq_len] = mr # Use the correctly named mask tensor
+                    mask_t[i, :seq_len] = mr
 
-                # Move tensors to the model's device
                 tokens = tokens.to(model_device)
-                mask_t = mask_t.to(model_device) # Use the correctly named mask tensor
+                mask_t = mask_t.to(model_device)
 
                 # --- Model Inference ---
-                model.eval() # Ensure model is in eval mode
-                with eval_ctx: # Apply AMP context if enabled
-                    logits, _ = model(tokens) # Get logits for all positions
+                # model.eval() should be set outside this function, before calling estimate_loss
+                with eval_ctx: # Apply the modified (float32) context
+                    logits, _ = model(tokens)
 
-                # Check for NaNs/Infs in logits, which indicate instability
+                # --- Add Debug Print for Logits ---
+                if device_type == 'cuda' and eval_counter < 1: # Print only for the first example
+                     print(f"DEBUG: Logits dtype inside evaluate_hellaswag: {logits.dtype}")
+                # --- End Debug Print ---
+
                 if torch.isnan(logits).any() or torch.isinf(logits).any():
-                    print(f"ERROR: NaNs or Infs detected in HellaSwag logits for example context: {ctx[:50]}...")
-                    # Decide how to handle - skip example? return default prediction?
-                    # For now, let's assume prediction is incorrect (or assign random/default)
-                    pred_norm = -1 # Assign invalid prediction
+                     print(f"ERROR: NaNs or Infs detected in HellaSwag logits for example context: {ctx[:50]}...")
+                     pred_norm = -1
                 else:
-                    # Calculate the most likely completion based on lowest average loss
                     try:
-                        pred_norm = get_most_likely_row(tokens, mask_t, logits) # Pass the mask tensor
+                        # --- Pass counter for debugging get_most_likely_row ---
+                        pred_norm = get_most_likely_row(tokens, mask_t, logits, debug_print=(eval_counter < 1))
                     except Exception as e:
                          print(f"ERROR occurred inside get_most_likely_row: {e}")
                          import traceback
                          traceback.print_exc()
-                         pred_norm = -1 # Assign invalid prediction on error
+                         pred_norm = -1
 
-                # --- Accuracy Calculation ---
                 if pred_norm == label:
                     num_correct_norm += 1
+
+                eval_counter += 1 # Increment counter
 
     except FileNotFoundError:
         print(f"Error: HellaSwag validation file not found at {hellaswag_path} even after download attempt.")
@@ -811,9 +792,8 @@ def evaluate_hellaswag(model: GPT, enc: Encoding, hellaswag_path='data/hellaswag
         print(f"An unexpected error occurred during the HellaSwag evaluation loop: {e}")
         import traceback
         traceback.print_exc()
-        return -1.0 # Indicate failure
+        return -1.0
 
-    # Calculate final accuracy
     if num_total == 0:
         print("Warning: No examples were processed during HellaSwag evaluation.")
         return 0.0

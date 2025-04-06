@@ -517,7 +517,16 @@ while True:
 
     # Evaluate loss and save checkpoints at eval_interval
     if iter_num % eval_interval == 0 and master_process:
+        # --- Set model to eval mode ---
+        model.eval()
+        # --- End set model to eval mode ---
+
         losses = estimate_loss(model) # Pass the potentially DDP-wrapped model
+
+        # --- Set model back to train mode ---
+        model.train()
+        # --- End set model back to train mode ---
+
         print_str = f"step {iter_num}: train loss {losses.get('train', float('nan')):.4f}, val loss {losses.get('val', float('nan')):.4f}"
         if hellaswag and 'hellaswag' in losses: # Check if key exists
             print_str += f", HellaSwag Acc: {losses['hellaswag']:.4f}"
