@@ -69,6 +69,7 @@ class TimeStepGatedReduction(nn.Module):
         # Project to d_new for both gate and value
         self.gate_proj = nn.Linear(d0, d_new, bias=bias)
         self.value_proj = nn.Linear(d0, d_new, bias=bias)
+        self.output_proj = nn.Linear(d_new, d_new, bias=bias)
         # Consider adding an activation to value_proj if needed, e.g., GELU
         self.value_act = nn.GELU()
 
@@ -85,9 +86,10 @@ class TimeStepGatedReduction(nn.Module):
         # Apply sigmoid gating
         activated_gate = torch.sigmoid(gate)
         gated_value = activated_gate * value # Element-wise multiplication
+        final_output = self.output_proj(gated_value) # (B, L, d_new) -> (B, L, d_new)
 
         # Output shape: (B, L, d_new)
-        return gated_value
+        return final_output
 
 # --- Standard CausalSelfAttention (Modified to accept embed_dim) ---
 class CausalSelfAttention(nn.Module):
