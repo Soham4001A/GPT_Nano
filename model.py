@@ -702,7 +702,7 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
 
                 for end_idx, end in enumerate(endings):
                     try:
-                        completion_tokens = enc.encode(end)
+                        completion_tokens = enc.encode(" " + end)
                     except Exception as e:
                          print(f"Warning: Encoding error in completion index {end_idx}, skipping this ending: {e}")
                          completion_tokens = [] # Treat as empty
