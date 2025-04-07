@@ -70,7 +70,7 @@ class TimeStepGatedReduction(nn.Module):
         self.gate_proj = nn.Linear(d0, d_new, bias=bias)
         self.value_proj = nn.Linear(d0, d_new, bias=bias)
         # Consider adding an activation to value_proj if needed, e.g., GELU
-        # self.value_act = nn.GELU()
+        self.value_act = nn.GELU()
 
     def forward(self, x):
         # x shape: (B, L, d0)
@@ -79,7 +79,8 @@ class TimeStepGatedReduction(nn.Module):
 
         gate = self.gate_proj(x)  # (B, L, d_new)
         value = self.value_proj(x) # (B, L, d_new)
-        # Apply activation if included: value = self.value_act(value)
+        # Apply activation if included: 
+        value = self.value_act(value)
 
         # Apply sigmoid gating
         activated_gate = torch.sigmoid(gate)
