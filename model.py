@@ -66,30 +66,23 @@ class TimeStepGatedReduction(nn.Module):
         self.d_new = d_new
         print(f"  Initializing TimeStepGatedReduction: d0={d0} -> d_new={d_new}")
 
-        # Project to d_new for both gate and value
-        self.gate_proj = nn.Linear(d0, d_new, bias=bias)
-        self.value_proj = nn.Linear(d0, d_new, bias=bias)
-        self.output_proj = nn.Linear(d_new, d_new, bias=bias)
-        # Consider adding an activation to value_proj if needed, e.g., GELU
         self.value_act = nn.GELU()
+        self.gate_act = nn.Sigmoid()
+
+        # Only one projection at the end
+        self.output_proj = nn.Linear(d0, d_new, bias=bias)
+        self.output_act = nn.GELU()
 
     def forward(self, x):
         # x shape: (B, L, d0)
         if x.size(-1) != self.d0:
             raise ValueError(f"TimeStepGatedReduction input dim mismatch: Expected {self.d0}, got {x.size(-1)}")
 
-        gate = self.gate_proj(x)  # (B, L, d_new)
-        value = self.value_proj(x) # (B, L, d_new)
-        # Apply activation if included: 
-        value = self.value_act(value)
-
-        # Apply sigmoid gating
-        activated_gate = torch.sigmoid(gate)
-        gated_value = activated_gate * value # Element-wise multiplication
-        final_output = self.output_proj(gated_value) # (B, L, d_new) -> (B, L, d_new)
-
-        # Output shape: (B, L, d_new)
-        return final_output
+        value = self.value_act(x)
+        gate = self.gate_act(x)
+        gated = gate * value
+        output = self.output_proj(gated)
+        return self.output_act(output) # Output shape: (B, L, d_new)
 
 # --- Standard CausalSelfAttention (Modified to accept embed_dim) ---
 class CausalSelfAttention(nn.Module):
