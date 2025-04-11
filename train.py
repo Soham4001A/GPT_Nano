@@ -72,7 +72,7 @@ use_gated_reduction = True # Default to standard GPT
 # adamw optimizer
 learning_rate = 1e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
-weight_decay = 5e-1
+weight_decay = 0.02
 beta1 = 0.9
 beta2 = 0.95 
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
