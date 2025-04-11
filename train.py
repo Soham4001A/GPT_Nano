@@ -39,9 +39,9 @@ eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
-wandb_log = False # disabled by default
+wandb_log = True # disabled by default
 wandb_project = 'owt'
-wandb_run_name = 'gpt2-gated' # Adjusted default name
+wandb_run_name = 'G-LMA' # Adjusted default name
 # data
 dataset = 'openwebtext'
 gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes -> 40
@@ -70,7 +70,7 @@ use_gated_reduction = True # Default to standard GPT
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer
-learning_rate = 1e-4 # max learning rate
+learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 0.02
 beta1 = 0.9
