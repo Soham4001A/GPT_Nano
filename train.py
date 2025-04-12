@@ -72,7 +72,7 @@ use_gated_reduction = True # Default to standard GPT
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
-weight_decay = 0.02
+weight_decay = 0.07
 beta1 = 0.9
 beta2 = 0.95 
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
@@ -99,7 +99,7 @@ else:
 
 # Dtype and Autocast setup
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
-compile = True # Disable torch.compile initially
+compile = False # Disable torch.compile initially
 
 # --- HellaSwag ---
 hellaswag = True # Default to True, can be overridden
