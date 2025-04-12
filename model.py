@@ -52,26 +52,23 @@ class LayerNorm(nn.Module):
 
 # --- Time-Step-Wise Gated Reduction Layer ---
 class TimeStepGatedReduction(nn.Module):
-    """
-    Applies a Gated Linear Unit (GLU) independently to each time step
-    to reduce the feature dimension from d0 to d_new.
-    Input: (B, L, d0)
-    Output: (B, L, d_new)
-    """
     def __init__(self, d0: int, d_new: int, bias: bool):
         super().__init__()
         if d0 <= 0 or d_new <= 0:
-            raise ValueError(f"TimeStepGatedReduction dims must be positive (d0={d0}, d_new={d_new})")
+            raise ValueError(f"Dimensions must be positive (d0={d0}, d_new={d_new})")
         self.d0 = d0
         self.d_new = d_new
-        print(f"  Initializing TimeStepGatedReduction: d0={d0} -> d_new={d_new}")
-
-        self.value_act = nn.GELU()
+        self.gate_proj = nn.Linear(d0, d_new, bias=bias)
+        self.value_proj = nn.Linear(d0, d_new, bias=bias)
         self.gate_act = nn.Sigmoid()
 
-        # Only one projection at the end
-        self.output_proj = nn.Linear(d0, d_new, bias=bias)
-        self.output_act = nn.GELU()
+    def forward(self, x):
+        if x.size(-1) != self.d0:
+            raise ValueError(f"Input dim mismatch: Expected {self.d0}, got {x.size(-1)}")
+        gate = self.gate_act(self.gate_proj(x))  # (B, L, d_new)
+        value = self.value_proj(x)               # (B, L, d_new)
+        output = gate * value                    # (B, L, d_new)
+        return output
 
     def forward(self, x):
         # x shape: (B, L, d0)
@@ -323,19 +320,21 @@ class GPT(nn.Module):
     def forward(self, idx, targets=None):
         device = idx.device
         b, t = idx.size()
-        # Crop sequence if necessary
         if t > self.config.block_size:
             idx = idx[:, -self.config.block_size:]
             t = self.config.block_size
-        if targets is not None and targets.shape[1] > self.config.block_size:
-            targets = targets[:, -self.config.block_size:]
 
         pos = torch.arange(0, t, dtype=torch.long, device=device)
+        tok_emb = self.transformer.wte(idx)  # (B, T, n_embd)
+        pos_emb = self.transformer.wpe(pos)  # (T, n_embd)
 
-        # --- Embeddings ---
-        tok_emb = self.transformer.wte(idx)
-        pos_emb = self.transformer.wpe(pos)
-        x = self.transformer.drop(tok_emb + pos_emb)
+        if self.gated_reduction is not None:
+            tok_emb_reduced = self.gated_reduction(tok_emb)           # (B, T, d_new)
+            pos_emb_reduced = nn.Linear(self.config.n_embd, self.config.gating_d_new, bias=False)(pos_emb)  # (T, d_new)
+            x = self.transformer.drop(tok_emb_reduced + pos_emb_reduced)
+        else:
+            x = self.transformer.drop(tok_emb + pos_emb)
+        # Continue with transformer blocks...
 
         # --- Optional Gated Reduction ---
         if self.gated_reduction is not None:
