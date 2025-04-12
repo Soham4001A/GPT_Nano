@@ -326,10 +326,6 @@ class GPT(nn.Module):
             x = self.transformer.drop(tok_emb + pos_emb)
         # Continue with transformer blocks...
 
-        # --- Optional Gated Reduction ---
-        if self.gated_reduction is not None:
-            x = self.gated_reduction(x)
-
         # --- Transformer Blocks ---
         for block in self.transformer.h:
             x = block(x)
