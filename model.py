@@ -210,6 +210,7 @@ class GPT(nn.Module):
         self.operates_on_reduced_dim = config.use_gated_reduction
         self.gated_reduction = None
         self.final_ln_lm_head_dim = config.n_embd # Default to input embedding dim
+        self.pos_proj = nn.Linear(self.config.n_embd, self.config.gating_d_new, bias=False)
 
         if self.operates_on_reduced_dim:
             print("--- Configuring Gated Reduction ---")
@@ -319,7 +320,7 @@ class GPT(nn.Module):
 
         if self.gated_reduction is not None:
             tok_emb_reduced = self.gated_reduction(tok_emb)           # (B, T, d_new)
-            pos_emb_reduced = nn.Linear(self.config.n_embd, self.config.gating_d_new, bias=False)(pos_emb)  # (T, d_new)
+            pos_emb_reduced = self.pos_proj(pos_emb)  # (T, d_new)
             x = self.transformer.drop(tok_emb_reduced + pos_emb_reduced)
         else:
             x = self.transformer.drop(tok_emb + pos_emb)
