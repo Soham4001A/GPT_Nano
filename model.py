@@ -70,17 +70,6 @@ class TimeStepGatedReduction(nn.Module):
         output = gate * value                    # (B, L, d_new)
         return output
 
-    def forward(self, x):
-        # x shape: (B, L, d0)
-        if x.size(-1) != self.d0:
-            raise ValueError(f"TimeStepGatedReduction input dim mismatch: Expected {self.d0}, got {x.size(-1)}")
-
-        value = self.value_act(x)
-        gate = self.gate_act(x)
-        gated = gate * value
-        output = self.output_proj(gated)
-        return self.output_act(output) # Output shape: (B, L, d_new)
-
 # --- Standard CausalSelfAttention (Modified to accept embed_dim) ---
 class CausalSelfAttention(nn.Module):
     """ Standard MHA implementation, now accepting embed_dim """
