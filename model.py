@@ -632,8 +632,11 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
         print(f"Error: HellaSwag validation file not found at {hellaswag_path}")
         data_dir = os.path.dirname(hellaswag_path) or '.'
         if not os.path.exists(data_dir):
-            try: os.makedirs(data_dir)
-            except OSError as e: print(f"Error creating directory {data_dir}: {e}"); return -1.0
+            try:
+                os.makedirs(data_dir)
+            except OSError as e:
+                print(f"Error creating directory {data_dir}: {e}")
+                return -1.0
 
         val_url = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
         print(f"Attempting download from {val_url}...")
@@ -641,33 +644,42 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
             with requests.get(val_url, stream=True) as r:
                 r.raise_for_status()
                 with open(hellaswag_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
             print("Download successful.")
         except requests.exceptions.RequestException as e:
             print(f"Download failed: {e}. Cannot evaluate HellaSwag.")
-            if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
+            if os.path.exists(hellaswag_path):
+                os.remove(hellaswag_path)
             return -1.0
         except Exception as e:
-             print(f"An unexpected error occurred during download: {e}")
-             if os.path.exists(hellaswag_path): os.remove(hellaswag_path)
-             return -1.0
-    # --- End Download Logic ---
+            print(f"An unexpected error occurred during download: {e}")
+            if os.path.exists(hellaswag_path):
+                os.remove(hellaswag_path)
+            return -1.0
 
-    # --- Determine device and evaluation context ---
+    # --- Determine device ---
     model_device = next(model.parameters()).device
     device_type = 'cuda' if 'cuda' in str(model_device) else 'cpu'
+    print(f"DEBUG: Device for HellaSwag evaluation: {device_type}")
 
-    # --- PRECISION FIX: Force float32 context for HellaSwag forward pass ---
-    print(f"DEBUG: Setting evaluation context for HellaSwag (Device: {device_type}).")
+    # --- Ensure model is in float32 for evaluation ---
+    model.eval()  # Set model to evaluation mode
+    original_dtypes = {}
     if device_type == 'cuda':
-        print("DEBUG: Forcing torch.float32 context for HellaSwag model forward pass.")
-        eval_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.float32) # FORCE FLOAT32
-    else:
-        # CPU uses float32 by default, no autocast needed
-        eval_ctx = nullcontext()
-    # --- End Precision Fix ---
+        print("DEBUG: Converting model to float32 for HellaSwag evaluation.")
+        # Store original dtypes and convert parameters/buffers to float32
+        for name, param in model.named_parameters():
+            original_dtypes[name] = param.dtype
+            param.data = param.data.to(dtype=torch.float32)
+        for name, buf in model.named_buffers():
+            original_dtypes[f"buffer_{name}"] = buf.dtype
+            buf.data = buf.data.to(dtype=torch.float32)
 
-    processed_lines = 0 # Counter for debugging
+    # --- Evaluation context (no autocast needed since model is in float32) ---
+    eval_ctx = nullcontext()  # Use nullcontext since model is explicitly float32
+
+    processed_lines = 0
     try:
         with open(hellaswag_path, 'r', encoding='utf-8') as f:
             for line in tqdm.tqdm(f, desc="HellaSwag Eval"):
@@ -687,8 +699,9 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
                 try:
                     ctx_tokens = enc.encode(ctx)
                 except Exception as e:
-                     print(f"Warning: Skipping example due to encoding error in context: {e}")
-                     num_total -= 1; continue
+                    print(f"Warning: Skipping example due to encoding error in context: {e}")
+                    num_total -= 1
+                    continue
 
                 tok_rows = []
                 mask_rows = []
@@ -697,8 +710,8 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
                     try:
                         completion_tokens = enc.encode(" " + end)
                     except Exception as e:
-                         print(f"Warning: Encoding error in completion index {end_idx}, skipping this ending: {e}")
-                         completion_tokens = [] # Treat as empty
+                        print(f"Warning: Encoding error in completion index {end_idx}, skipping this ending: {e}")
+                        completion_tokens = []
 
                     tok = ctx_tokens + completion_tokens
                     mask = ([0]*len(ctx_tokens)) + ([1]*len(completion_tokens))
@@ -707,53 +720,43 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
                     if len(tok) > model.config.block_size:
                         num_comp = len(completion_tokens)
                         max_ctx = model.config.block_size - num_comp
-                        if max_ctx < 0: # Completion longer than block size
+                        if max_ctx < 0:
                             completion_tokens = completion_tokens[:model.config.block_size]
                             tok = completion_tokens
                             mask = [1] * len(tok)
-                        else: # Truncate context
+                        else:
                             start_idx = max(0, len(ctx_tokens) - max_ctx)
                             trunc_ctx = ctx_tokens[start_idx:]
                             tok = trunc_ctx + completion_tokens
                             mask = ([0]*len(trunc_ctx)) + ([1]*len(completion_tokens))
-                        # Final safety truncate (shouldn't be needed if logic above is correct)
                         if len(tok) > model.config.block_size:
                             tok = tok[-model.config.block_size:]
                             mask = mask[-model.config.block_size:]
-                    # --- End Truncation ---
 
-                    # --- Minimum Length Padding (Crucial Fix for Seq Len <= 1) ---
+                    # --- Minimum Length Padding ---
                     if len(tok) < 2:
                         pad_len = 2 - len(tok)
-                        # Use a pad token ID if available, otherwise eot_token or 0
                         pad_token_id = getattr(enc, 'pad_token_id', getattr(enc, 'eot_token', 0))
                         tok = tok + ([pad_token_id] * pad_len)
-                        mask = mask + ([0] * pad_len) # Pad mask with 0s
-                    # --- End Minimum Length Padding ---
+                        mask = mask + ([0] * pad_len)
 
                     tok_rows.append(torch.tensor(tok, dtype=torch.long))
                     mask_rows.append(torch.tensor(mask, dtype=torch.long))
 
-                # If tokenization/encoding failed for all endings
-                if not tok_rows or len(tok_rows) != 4: # Should always have 4 attempts
+                if not tok_rows or len(tok_rows) != 4:
                     print(f"Warning: Skipping example due to insufficient valid endings ({len(tok_rows)}/4). Context: {ctx[:50]}...")
                     num_total -= 1
                     continue
 
                 # --- Batching and Padding ---
                 try:
-                     # Calculate max_len ONLY from valid rows added
-                     max_len = max(len(r) for r in tok_rows)
-                except ValueError: # Handles case where tok_rows might somehow be empty despite checks
-                     print(f"Warning: Skipping example due to empty tok_rows after processing endings. Context: {ctx[:50]}...")
-                     num_total -= 1
-                     continue
+                    max_len = max(len(r) for r in tok_rows)
+                except ValueError:
+                    print(f"Warning: Skipping example due to empty tok_rows after processing endings. Context: {ctx[:50]}...")
+                    num_total -= 1
+                    continue
 
-                max_len = max(2, max_len) # Ensure max_len is at least 2
-
-                # DEBUG PRINT (Optional)
-                # if processed_lines <= 1: print(f"DEBUG HS: max_len = {max_len}, Num rows = {len(tok_rows)}")
-
+                max_len = max(2, max_len)
                 pad_token_id = getattr(enc, 'pad_token_id', getattr(enc, 'eot_token', 0))
                 tokens = torch.full((len(tok_rows), max_len), pad_token_id, dtype=torch.long)
                 mask_t = torch.zeros((len(tok_rows), max_len), dtype=torch.long)
@@ -766,38 +769,26 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
                 tokens = tokens.to(model_device)
                 mask_t = mask_t.to(model_device)
 
-                # DEBUG PRINT (Optional)
-                # if processed_lines <= 1: print(f"DEBUG HS: tokens shape before model call = {tokens.shape}")
-
                 # --- Model Inference ---
-                model.eval() # Ensure model is in eval mode
-                with eval_ctx: # Apply the correct context (float32 on CUDA)
+                with eval_ctx:
                     logits, _ = model(tokens)
-
-                # DEBUG PRINT (Optional)
-                # if processed_lines <= 1: print(f"DEBUG HS: logits shape after model call = {logits.shape}")
-                # if processed_lines <= 1: print(f"DEBUG HS: logits dtype after model call = {logits.dtype}")
 
                 # --- NaN/Inf Check ---
                 if torch.isnan(logits).any() or torch.isinf(logits).any():
                     print(f"ERROR: NaNs or Infs detected in HellaSwag logits! Context: {ctx[:50]}...")
-                    # Consider skipping this example or assigning a default prediction
-                    pred_norm = -1 # Assign invalid prediction
+                    pred_norm = -1
                 else:
-                    # --- Calculate Most Likely Row ---
                     try:
                         pred_norm = get_most_likely_row(tokens, mask_t, logits)
                     except Exception as e:
-                         print(f"ERROR occurred inside get_most_likely_row: {e}")
-                         import traceback
-                         traceback.print_exc()
-                         pred_norm = -1 # Assign invalid prediction on error
+                        print(f"ERROR occurred inside get_most_likely_row: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        pred_norm = -1
 
-                # --- Accuracy Calculation ---
                 if pred_norm == label:
                     num_correct_norm += 1
 
-    # --- Exception Handling & Final Calculation ---
     except FileNotFoundError:
         print(f"Error: HellaSwag validation file not found at {hellaswag_path} even after download attempt.")
         return -1.0
@@ -805,7 +796,18 @@ def evaluate_hellaswag(model, enc: Encoding, hellaswag_path='data/hellaswag/hell
         print(f"\nAn unexpected error occurred during the HellaSwag evaluation loop: {e}")
         import traceback
         traceback.print_exc()
-        return -1.0 # Indicate failure
+        return -1.0
+    finally:
+        # --- Restore original dtypes ---
+        if device_type == 'cuda':
+            print("DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.")
+            for name, param in model.named_parameters():
+                if name in original_dtypes:
+                    param.data = param.data.to(dtype=original_dtypes[name])
+            for name, buf in model.named_buffers():
+                buf_name = f"buffer_{name}"
+                if buf_name in original_dtypes:
+                    buf.data = buf.data.to(dtype=original_dtypes[buf_name])
 
     if num_total == 0:
         print("Warning: No examples were processed during HellaSwag evaluation.")

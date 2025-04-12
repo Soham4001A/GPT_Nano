@@ -99,7 +99,7 @@ else:
 
 # Dtype and Autocast setup
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16'
-compile = False # Disable torch.compile initially
+compile = True # Disable torch.compile initially
 
 # --- HellaSwag ---
 hellaswag = True # Default to True, can be overridden
