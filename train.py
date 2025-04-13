@@ -137,7 +137,7 @@ if use_gated_reduction:
             raise ValueError(f"Explicit gating_d_new must be a positive integer, got {gating_d_new_derived}")
     else:
         # Calculate from n_embd and d_reduction_factor
-        gating_d_new_derived = n_embd // d_reduction_factor
+        gating_d_new_derived = int(n_embd // d_reduction_factor)
         gating_d_new_derived = max(1, gating_d_new_derived) # Ensure > 0
         print(f"Calculated initial gating_d_new: {n_embd} // {d_reduction_factor} = {gating_d_new_derived}")
 
