@@ -70,7 +70,7 @@ use_gated_reduction = True # Default to standard GPT
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
+learning_rate = 8e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 0.07
 beta1 = 0.9
