@@ -59,6 +59,9 @@ elif user_config == "16":
 elif user_config == "reduc_2":
     n_head = 16
     d_reduction_factor = 2
+elif user_config == "reduc_1.5":
+    n_head = 16
+    d_reduction_factor = 1.5
 else:
     print("invalid config")
     exit(1)
