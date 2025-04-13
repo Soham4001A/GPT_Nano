@@ -49,7 +49,7 @@ batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch si
 block_size = 1024
 # model
 n_layer = 12
-user_config = input("Which Config? (16/12/reduc_2) ")
+user_config = input("Which Config? (16/12/reduc_2/reduc_1.5) ")
 if user_config == "12":
     n_head = 12
     d_reduction_factor = 4
@@ -137,9 +137,6 @@ if use_gated_reduction:
             raise ValueError(f"Explicit gating_d_new must be a positive integer, got {gating_d_new_derived}")
     else:
         # Calculate from n_embd and d_reduction_factor
-        if not isinstance(d_reduction_factor, int) or d_reduction_factor < 1:
-             raise ValueError(f"d_reduction_factor ({d_reduction_factor}) must be an integer >= 1")
-
         gating_d_new_derived = n_embd // d_reduction_factor
         gating_d_new_derived = max(1, gating_d_new_derived) # Ensure > 0
         print(f"Calculated initial gating_d_new: {n_embd} // {d_reduction_factor} = {gating_d_new_derived}")
