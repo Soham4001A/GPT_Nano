@@ -480,14 +480,18 @@ class GPT(nn.Module):
         alpha = 200.0
         epsilon = 1e-8
         momentum = 0.9
-        optimizer = AlphaGrad(
-            optim_groups,
-            lr=learning_rate,
-            alpha=alpha,        # tanh steepness (tune as needed)
-            epsilon=epsilon,      # numerical stability
-            momentum=momentum,      # momentum factor
-            weight_decay=weight_decay
-        )
+        param_groups = []
+        for p in self.parameters():
+            if p.requires_grad:
+                param_groups.append({
+                    "params": [p],
+                    "lr": learning_rate,
+                    "alpha": alpha,
+                    "epsilon": epsilon,
+                    "momentum": momentum,
+                    "weight_decay": weight_decay
+                })
+        optimizer = AlphaGrad(param_groups)
         print(f"Using AlphaGrad optimizer: α={alpha}, ε={epsilon}, momentum={momentum}")
 
         return optimizer
