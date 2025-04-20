@@ -477,15 +477,18 @@ class GPT(nn.Module):
         use_fused = fused_available and device_type.startswith('cuda')
         extra_args = dict(fused=True) if use_fused else dict()
         # Use AlphaGrad optimizer with layer-wise tanh clipping
+        alpha = 200.0
+        epsilon = 1e-8
+        momentum = 0.9
         optimizer = AlphaGrad(
             optim_groups,
             lr=learning_rate,
-            alpha=20.0,        # tanh steepness (tune as needed)
-            epsilon=1e-8,      # numerical stability
-            momentum=0.9,      # momentum factor
+            alpha=alpha,        # tanh steepness (tune as needed)
+            epsilon=epsilon,      # numerical stability
+            momentum=momentum,      # momentum factor
             weight_decay=weight_decay
         )
-        print("Using AlphaGrad optimizer: α=10.0, ε=1e-8, momentum=0.9")
+        print(f"Using AlphaGrad optimizer: α={alpha}, ε={epsilon}, momentum={momentum}")
 
         return optimizer
 
