@@ -211,9 +211,13 @@ class GPT(nn.Module):
         self.operates_on_reduced_dim = config.use_gated_reduction
         self.gated_reduction = None
         self.final_ln_lm_head_dim = config.n_embd # Default to input embedding dim
-        # Ensure gating_d_new is integer
-        out_dim = int(self.config.gating_d_new)
-        self.pos_proj = nn.Linear(self.config.n_embd, out_dim, bias=False)
+        # Position projection: identity if no gating, otherwise map to reduced dim
+        if not self.config.use_gated_reduction:
+            self.pos_proj = nn.Identity()
+        else:
+            # Ensure gating_d_new is integer
+            out_dim = int(self.config.gating_d_new)
+            self.pos_proj = nn.Linear(self.config.n_embd, out_dim, bias=False)
 
         if self.operates_on_reduced_dim:
             print("--- Configuring Gated Reduction ---")
