@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import os
 import tqdm, json # For HellaSwag
 import torch
-from torch.optim import AlphaGrad
+from optim import AlphaGrad
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
