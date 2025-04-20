@@ -211,7 +211,9 @@ class GPT(nn.Module):
         self.operates_on_reduced_dim = config.use_gated_reduction
         self.gated_reduction = None
         self.final_ln_lm_head_dim = config.n_embd # Default to input embedding dim
-        self.pos_proj = nn.Linear(self.config.n_embd, self.config.gating_d_new, bias=False)
+        # Ensure gating_d_new is integer
+        out_dim = int(self.config.gating_d_new)
+        self.pos_proj = nn.Linear(self.config.n_embd, out_dim, bias=False)
 
         if self.operates_on_reduced_dim:
             print("--- Configuring Gated Reduction ---")
@@ -232,9 +234,9 @@ class GPT(nn.Module):
                 # Option 3: Warn but proceed (MHA can handle it, might be less optimal)
                  print(f"Warning: gating_d_new ({config.gating_d_new}) is not divisible by n_head ({config.n_head}). MHA performance might vary.")
 
-            d_new = config.gating_d_new
+            d_new = int(config.gating_d_new)
             self.gated_reduction = TimeStepGatedReduction(config.n_embd, d_new, config.bias)
-            self.final_ln_lm_head_dim = d_new
+            self.final_ln_lm_head_dim = int(d_new)
             print(f"--- Dimensions into Blocks: L={config.block_size}, D={self.final_ln_lm_head_dim} (Reduced) ---")
         else:
              print(f"--- Dimensions into Blocks: L={config.block_size}, D={self.final_ln_lm_head_dim} (Standard) ---")
