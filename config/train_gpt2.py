@@ -4,7 +4,7 @@
 
 wandb_log = True
 wandb_project = 'owt'
-wandb_run_name='TimeChunkingALA'
+wandb_run_name='AlphaGrad'
 
 # these make the total batch size be ~0.5M
 # 12 batch size * 1024 block size * 5 gradaccum * 8 GPUs = 491,520
@@ -25,4 +25,4 @@ log_interval = 10
 weight_decay = 1e-1
 
 # Latent Meta Attention
-use_lma = True
+use_lma = False

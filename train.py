@@ -69,7 +69,7 @@ n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = True # do we use bias inside LayerNorm and Linear layers?
 # --- Time-Step Gated Reduction Config --- (NEW DEFAULTS)
-use_gated_reduction = True # Default to standard GPT
+use_gated_reduction = False # Default to standard GPT
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer

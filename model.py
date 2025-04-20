@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import os
 import tqdm, json # For HellaSwag
 import torch
+from torch.optim import AlphaGrad
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
@@ -469,8 +470,16 @@ class GPT(nn.Module):
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type.startswith('cuda')
         extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
+        # Use AlphaGrad optimizer with layer-wise tanh clipping
+        optimizer = AlphaGrad(
+            optim_groups,
+            lr=learning_rate,
+            alpha=20.0,        # tanh steepness (tune as needed)
+            epsilon=1e-8,      # numerical stability
+            momentum=0.9,      # momentum factor
+            weight_decay=weight_decay
+        )
+        print("Using AlphaGrad optimizer: α=10.0, ε=1e-8, momentum=0.9")
 
         return optimizer
 
