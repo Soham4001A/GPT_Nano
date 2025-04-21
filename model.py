@@ -477,7 +477,7 @@ class GPT(nn.Module):
         use_fused = fused_available and device_type.startswith('cuda')
         extra_args = dict(fused=True) if use_fused else dict()
         # Use AlphaGrad optimizer with layer-wise tanh clipping
-        alpha = 50.0
+        alpha = 200.0
         epsilon = 1e-8
         momentum = 0.9
         param_groups = []
