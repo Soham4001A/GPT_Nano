@@ -119,62 +119,81 @@ class AlphaGrad(Optimizer):
  
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step with layer‐wise tanh clipping."""
         loss = None
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
- 
+
         for group in self.param_groups:
-            # Collect parameters, original grads, and momentum buffers
-            params, grads, momentum_buffer_list = [], [], []
-            has_sparse = False
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-                if group["fused"] and getattr(self, "_need_device_dtype_check_for_fused", True):
-                    _device_dtype_check_for_fused(p)
-                    self._need_device_dtype_check_for_fused = False
-                params.append(p)
-                grad = p.grad
-                if grad.is_sparse:
-                    has_sparse = True
-                grads.append(grad)
-                if group["momentum"] != 0:
-                    momentum_buffer_list.append(self.state[p].get("momentum_buffer"))
- 
-            # Compute layer-wise norm over all grads in this group
-            all_flat = torch.cat([g.view(-1) for g in grads])
-            total_norm = all_flat.norm(2).add(group["epsilon"])
- 
-            # Clip each gradient via tanh(alpha * grad / norm)
-            clipped_grads = [
-                torch.tanh(group["alpha"] * (g / total_norm)) for g in grads
-            ]
- 
-            # Apply the functional SGD using clipped gradients
-            sgd(
-                params,
-                clipped_grads,
-                momentum_buffer_list,
-                has_sparse_grad=has_sparse,
-                foreach=group["foreach"],
-                fused=group["fused"],
-                grad_scale=getattr(self, "grad_scale", None),
-                found_inf=getattr(self, "found_inf", None),
-                weight_decay=group["weight_decay"],
-                momentum=group["momentum"],
-                lr=group["lr"],
-                dampening=group["dampening"],
-                nesterov=group["nesterov"],
-                maximize=group["maximize"],
-            )
- 
-            # Update momentum buffers in state
-            if group["momentum"] != 0:
-                for p, buf in zip(params, momentum_buffer_list):
-                    self.state[p]["momentum_buffer"] = buf
- 
+            # Because we assume one param per group:
+            if not group['params']:
+                continue
+            p = group['params'][0] # Get the single parameter in the group
+
+            if p.grad is None:
+                continue
+
+            grad = p.grad
+            if grad.is_sparse:
+                 # Note: AlphaGrad norm/tanh might behave oddly with sparse grads.
+                 # Consider raising an error or implementing specific sparse handling.
+                 # For now, let's proceed assuming dense grads for simplicity.
+                 # If you need sparse, this whole section needs rethinking.
+                 print(f"Warning: AlphaGrad sparse gradient handling not fully implemented for param {p.shape}. Skipping update.")
+                 continue
+
+            state = self.state[p]
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+            lr = group['lr']
+            weight_decay = group['weight_decay']
+            alpha = group['alpha']
+            epsilon = group['epsilon']
+            maximize = group['maximize']
+
+            # Handle maximize BEFORE any gradient processing
+            if maximize:
+                grad = grad.neg()
+
+            # 1. Per-parameter normalization
+            grad_norm = grad.norm(2).add_(epsilon) # Use add_ for inplace
+            normalized_grad = grad / grad_norm # ~g_t
+
+            # 2. Smooth clipping via tanh
+            g_prime = torch.tanh(alpha * normalized_grad) # g'_t
+
+            # 3. Apply weight decay (Decoupled style recommended)
+            #    Apply WD *before* momentum and main update step
+            if weight_decay != 0:
+                 # AdamW-style decoupled weight decay:
+                 # p.data.mul_(1.0 - lr * weight_decay)
+                 # OR SGD-style weight decay (less common with adaptive methods):
+                 g_prime = g_prime.add(p.data, alpha=weight_decay) # Add WD to the update direction
+
+
+            # 4. Apply momentum
+            if momentum != 0:
+                if 'momentum_buffer' not in state:
+                    buf = state['momentum_buffer'] = torch.clone(g_prime).detach()
+                else:
+                    buf = state['momentum_buffer']
+                    buf.mul_(momentum).add_(g_prime, alpha=1 - dampening) # v_t+1 = gamma*v_t + (1-tau)*g'_t
+
+                if nesterov:
+                     # Nesterov update using g_prime
+                     final_update_direction = g_prime.add(buf, alpha=momentum) # g'_t + gamma * v_t+1
+                else:
+                     # Standard momentum update
+                     final_update_direction = buf # v_t+1
+
+            else: # No momentum
+                 final_update_direction = g_prime
+
+
+            # 5. Final parameter update
+            p.data.add_(final_update_direction, alpha=-lr) # theta_t+1 = theta_t - lr * update_direction
+
         return loss
         if nesterov and (momentum <= 0 or dampening != 0):
             raise ValueError("Nesterov momentum requires a momentum and zero dampening")

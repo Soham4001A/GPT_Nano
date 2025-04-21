@@ -460,39 +460,91 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         # filter out those that do not require grad
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+
+        # --- Correctly separate parameters for weight decay ---
+        # Creates two lists: decay_params (weights, embeddings) and nodecay_params (biases, layernorms)
         decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
         nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
-        ]
+
+        # Sanity check print statements
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
-        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
-        use_fused = fused_available and device_type.startswith('cuda')
-        extra_args = dict(fused=True) if use_fused else dict()
-        # Use AlphaGrad optimizer with layer-wise tanh clipping
-        alpha = 200.0
+        # --------------------------------------------------------
+
+        # --- Create parameter groups for AlphaGrad ---
+        # Each group will contain exactly ONE parameter tensor,
+        # but will have the CORRECT weight_decay value assigned.
+
+        # Define AlphaGrad specific hyperparameters (can be moved to config later)
+        alpha = 200.0  # Make this configurable if needed
         epsilon = 1e-8
-        momentum = 0.9
-        param_groups = []
-        for p in self.parameters():
-            if p.requires_grad:
-                param_groups.append({
-                    "params": [p],
-                    "lr": learning_rate,
-                    "alpha": alpha,
-                    "epsilon": epsilon,
-                    "momentum": momentum,
-                    "weight_decay": weight_decay
-                })
-        optimizer = AlphaGrad(param_groups)
-        print(f"Using AlphaGrad optimizer: α={alpha}, ε={epsilon}, momentum={momentum}")
+        momentum = 0.9 # Make this configurable if needed
+        # Note: `betas` are not used by AlphaGrad
+
+        # Initialize the list of parameter groups
+        param_groups_for_alphagrad = []
+
+        # Create groups for parameters THAT SHOULD BE DECAYED
+        for p in decay_params:
+            param_groups_for_alphagrad.append({
+                "params": [p],                  # List containing only this parameter
+                "lr": learning_rate,            # Base learning rate
+                "alpha": alpha,                 # AlphaGrad specific
+                "epsilon": epsilon,             # AlphaGrad specific
+                "momentum": momentum,           # AlphaGrad specific (if used)
+                "weight_decay": weight_decay,   # Apply the main weight decay value
+                # Add other AlphaGrad specific hyperparams here if needed (e.g., nesterov, dampening)
+                # Ensure keys match AlphaGrad.__init__ defaults dict
+                "dampening": 0.0,
+                "nesterov": False,
+                "maximize": False,
+                "foreach": None,
+                "differentiable": False,
+                "fused": None,
+            })
+
+        # Create groups for parameters THAT SHOULD *NOT* BE DECAYED
+        for p in nodecay_params:
+            param_groups_for_alphagrad.append({
+                "params": [p],                  # List containing only this parameter
+                "lr": learning_rate,            # Base learning rate
+                "alpha": alpha,                 # AlphaGrad specific
+                "epsilon": epsilon,             # AlphaGrad specific
+                "momentum": momentum,           # AlphaGrad specific (if used)
+                "weight_decay": 0.0,            # IMPORTANT: Set weight decay to ZERO
+                # Add other AlphaGrad specific hyperparams here if needed
+                "dampening": 0.0,
+                "nesterov": False,
+                "maximize": False,
+                "foreach": None,
+                "differentiable": False,
+                "fused": None,
+            })
+
+        # Verify total number of parameters included
+        total_params_in_groups = sum(len(pg['params']) for pg in param_groups_for_alphagrad)
+        total_params_requiring_grad = sum(1 for p in self.parameters() if p.requires_grad)
+        assert total_params_in_groups == total_params_requiring_grad, \
+            f"Mismatch in parameter count for optimizer groups: {total_params_in_groups} vs {total_params_requiring_grad}"
+        print(f"Created {len(param_groups_for_alphagrad)} parameter groups for AlphaGrad.")
+
+        # Instantiate the AlphaGrad optimizer with the crafted groups
+        # Ensure AlphaGrad is correctly imported
+        try:
+            from optim.sgd import AlphaGrad # Adjust path if necessary
+        except ImportError:
+            print("ERROR: Could not import AlphaGrad. Make sure optim/sgd.py exists and is accessible.")
+            raise
+
+        # Pass the list of dictionaries directly.
+        # The main 'lr' in the constructor becomes a default if not specified in a group.
+        optimizer = AlphaGrad(param_groups_for_alphagrad, lr=learning_rate)
+
+        print(f"Using AlphaGrad optimizer: α={alpha}, ε={epsilon}, momentum={momentum}, base_lr={learning_rate}, base_wd={weight_decay}")
+        print(f"Optimizer instance: {optimizer}")
+        # ---------------------------------------------------
 
         return optimizer
 
