@@ -478,7 +478,7 @@ class GPT(nn.Module):
         # but will have the CORRECT weight_decay value assigned.
 
         # Define AlphaGrad specific hyperparameters (can be moved to config later)
-        alpha = 50.0  # Make this configurable if needed
+        alpha = 1500.0  # Make this configurable if needed
         epsilon = 1e-8
         momentum = 0.9 # Make this configurable if needed
         # Note: `betas` are not used by AlphaGrad
