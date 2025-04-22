@@ -125,74 +125,60 @@ class AlphaGrad(Optimizer):
                 loss = closure()
 
         for group in self.param_groups:
-            # Because we assume one param per group:
             if not group['params']:
                 continue
-            p = group['params'][0] # Get the single parameter in the group
-
-            if p.grad is None:
-                continue
-
-            grad = p.grad
-            if grad.is_sparse:
-                 # Note: AlphaGrad norm/tanh might behave oddly with sparse grads.
-                 # Consider raising an error or implementing specific sparse handling.
-                 # For now, let's proceed assuming dense grads for simplicity.
-                 # If you need sparse, this whole section needs rethinking.
-                 print(f"Warning: AlphaGrad sparse gradient handling not fully implemented for param {p.shape}. Skipping update.")
-                 continue
-
-            state = self.state[p]
-            momentum = group['momentum']
-            dampening = group['dampening']
-            nesterov = group['nesterov']
-            lr = group['lr']
-            weight_decay = group['weight_decay']
-            alpha = group['alpha']
-            epsilon = group['epsilon']
-            maximize = group['maximize']
-
-            # Handle maximize BEFORE any gradient processing
-            if maximize:
-                grad = grad.neg()
-
-            # 1. Per-parameter normalization
-            grad_norm = grad.norm(2).add_(epsilon) # Use add_ for inplace
-            normalized_grad = grad / grad_norm # ~g_t
-
-            # 2. Smooth clipping via tanh
-            g_prime = torch.tanh(alpha * normalized_grad) # g'_t
-
-            # 3. Apply weight decay (Decoupled style recommended)
-            #    Apply WD *before* momentum and main update step
-            if weight_decay != 0:
-                 # AdamW-style decoupled weight decay:
-                 # p.data.mul_(1.0 - lr * weight_decay)
-                 # OR SGD-style weight decay (less common with adaptive methods):
-                 g_prime = g_prime.add(p.data, alpha=weight_decay) # Add WD to the update direction
-
-
-            # 4. Apply momentum
-            if momentum != 0:
-                if 'momentum_buffer' not in state:
-                    buf = state['momentum_buffer'] = torch.clone(g_prime).detach()
+        
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+        
+                grad = p.grad
+                if grad.is_sparse:
+                    print(f"Warning: AlphaGrad sparse gradient handling not implemented for param {p.shape}. Skipping.")
+                    continue
+        
+                state = self.state[p]
+                momentum = group['momentum']
+                dampening = group['dampening']
+                nesterov = group['nesterov']
+                lr = group['lr']
+                weight_decay = group['weight_decay']
+                alpha = group['alpha']
+                epsilon = group['epsilon']
+                maximize = group['maximize']
+        
+                # Handle maximize BEFORE any gradient processing
+                if maximize:
+                    grad = grad.neg()
+        
+                # 1. Per-parameter normalization
+                grad_norm = grad.norm(2).add(epsilon)
+                normalized_grad = grad / grad_norm  # ~g_t
+        
+                # 2. Smooth clipping via tanh
+                g_prime = torch.tanh(alpha * normalized_grad)  # g'_t
+        
+                # 3. Apply weight decay (decoupled)
+                if weight_decay != 0:
+                    g_prime = g_prime.add(p.data, alpha=weight_decay)
+        
+                # 4. Momentum
+                if momentum != 0:
+                    if 'momentum_buffer' not in state:
+                        buf = state['momentum_buffer'] = torch.clone(g_prime).detach()
+                    else:
+                        buf = state['momentum_buffer']
+                        buf.mul_(momentum).add_(g_prime, alpha=1 - dampening)
+        
+                    if nesterov:
+                        final_update_direction = g_prime.add(buf, alpha=momentum)
+                    else:
+                        final_update_direction = buf
                 else:
-                    buf = state['momentum_buffer']
-                    buf.mul_(momentum).add_(g_prime, alpha=1 - dampening) # v_t+1 = gamma*v_t + (1-tau)*g'_t
-
-                if nesterov:
-                     # Nesterov update using g_prime
-                     final_update_direction = g_prime.add(buf, alpha=momentum) # g'_t + gamma * v_t+1
-                else:
-                     # Standard momentum update
-                     final_update_direction = buf # v_t+1
-
-            else: # No momentum
-                 final_update_direction = g_prime
-
-
-            # 5. Final parameter update
-            p.data.add_(final_update_direction, alpha=-lr) # theta_t+1 = theta_t - lr * update_direction
+                    final_update_direction = g_prime
+        
+                # 5. Final parameter update
+                p.data.add_(final_update_direction, alpha=-lr)
 
         return loss
         if nesterov and (momentum <= 0 or dampening != 0):
@@ -236,53 +222,6 @@ class AlphaGrad(Optimizer):
                     momentum_buffer_list.append(state.get("momentum_buffer"))
 
         return has_sparse_grad
-
-    @_use_grad_for_differentiable
-    def step(self, closure=None):
-        """Perform a single optimization step.
-
-        Args:
-            closure (Callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
-
-        for group in self.param_groups:
-            params: List[Tensor] = []
-            grads: List[Tensor] = []
-            momentum_buffer_list: List[Optional[Tensor]] = []
-
-            has_sparse_grad = self._init_group(
-                group, params, grads, momentum_buffer_list
-            )
-
-            sgd(
-                params,
-                grads,
-                momentum_buffer_list,
-                weight_decay=group["weight_decay"],
-                momentum=group["momentum"],
-                lr=group["lr"],
-                dampening=group["dampening"],
-                nesterov=group["nesterov"],
-                maximize=group["maximize"],
-                has_sparse_grad=has_sparse_grad,
-                foreach=group["foreach"],
-                fused=group["fused"],
-                grad_scale=getattr(self, "grad_scale", None),
-                found_inf=getattr(self, "found_inf", None),
-            )
-
-            if group["momentum"] != 0:
-                # update momentum_buffers in state
-                for p, momentum_buffer in zip(params, momentum_buffer_list):
-                    state = self.state[p]
-                    state["momentum_buffer"] = momentum_buffer
-
-        return loss
 
 
 SGD.__doc__ = (
