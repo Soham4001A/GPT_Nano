@@ -1,0 +1,8 @@
+{"time":"2025-04-23T17:37:17.915932464Z","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/ubuntu/LMA_GPT_Nano/wandb/run-20250423_173717-f44eu9wx/logs/debug-core.log"}
+{"time":"2025-04-23T17:37:18.07203298Z","level":"INFO","msg":"created new stream","id":"f44eu9wx"}
+{"time":"2025-04-23T17:37:18.072067316Z","level":"INFO","msg":"stream: started","id":"f44eu9wx"}
+{"time":"2025-04-23T17:37:18.072077396Z","level":"INFO","msg":"handler: started","stream_id":"f44eu9wx"}
+{"time":"2025-04-23T17:37:18.07208226Z","level":"INFO","msg":"sender: started","stream_id":"f44eu9wx"}
+{"time":"2025-04-23T17:37:18.072097908Z","level":"INFO","msg":"writer: Do: started","stream_id":"f44eu9wx"}
+{"time":"2025-04-23T17:37:18.212495739Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-23T21:10:33.535132145Z","level":"INFO","msg":"api: retrying HTTP error","status":502,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/f44eu9wx/file_stream","body":"\n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>502 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n"}

@@ -478,7 +478,7 @@ class GPT(nn.Module):
         # but will have the CORRECT weight_decay value assigned.
 
         # Define AlphaGrad specific hyperparameters (can be moved to config later)
-        alpha = 3.0  # Make this configurable if needed
+        alpha = 2100.0  # Make this configurable if needed
         epsilon = 1e-8
         momentum = 0.9 # Make this configurable if needed
         # Note: `betas` are not used by AlphaGrad
@@ -533,17 +533,34 @@ class GPT(nn.Module):
         # Instantiate the AlphaGrad optimizer with the crafted groups
         # Ensure AlphaGrad is correctly imported
         try:
-            from optim.sgd import AlphaGrad # Adjust path if necessary
+            from optim.sgd import AlphaGrad, DynamicAlphaGrad # Adjust path if necessary
         except ImportError:
             print("ERROR: Could not import AlphaGrad. Make sure optim/sgd.py exists and is accessible.")
             raise
 
         # Pass the list of dictionaries directly.
         # The main 'lr' in the constructor becomes a default if not specified in a group.
-        optimizer = AlphaGrad(param_groups_for_alphagrad, lr=learning_rate)
+        #optimizer = AlphaGrad(param_groups_for_alphagrad, lr=learning_rate)
+        optimizer = DynamicAlphaGrad(
+            param_groups_for_alphagrad,
+            lr=1e-4,
+            momentum=0.9,             # optional
+            weight_decay=1e-4,        # optional
+            hyper=dict(               # optional overrides
+                p_star=0.08,
+                rho=0.02,
+            ),
+        )
 
         print(f"Using AlphaGrad optimizer: α={alpha}, ε={epsilon}, momentum={momentum}, base_lr={learning_rate}, base_wd={weight_decay}")
         print(f"Optimizer instance: {optimizer}")
+        assurance = input(f"Using Settings Above. Confirm (y)?")
+        if assurance == "y":
+            print("Training")
+        else:
+            print("Oops!")
+            exit()
+                  
         # ---------------------------------------------------
 
         return optimizer

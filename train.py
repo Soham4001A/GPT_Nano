@@ -12,7 +12,7 @@ To run with DDP on 4 gpus on 1 node, example:
 $ torchrun --standalone --nproc_per_node=4 train.py --use_gated_reduction=True --d_reduction_factor=4
 """
 
-AlphaGRAD = False
+AlphaGRAD = True
 
 import os
 import time

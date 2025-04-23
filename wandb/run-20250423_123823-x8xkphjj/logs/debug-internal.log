@@ -1,0 +1,10 @@
+{"time":"2025-04-23T12:38:23.314955311Z","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/ubuntu/LMA_GPT_Nano/wandb/run-20250423_123823-x8xkphjj/logs/debug-core.log"}
+{"time":"2025-04-23T12:38:23.465580172Z","level":"INFO","msg":"created new stream","id":"x8xkphjj"}
+{"time":"2025-04-23T12:38:23.465610605Z","level":"INFO","msg":"stream: started","id":"x8xkphjj"}
+{"time":"2025-04-23T12:38:23.465618445Z","level":"INFO","msg":"handler: started","stream_id":"x8xkphjj"}
+{"time":"2025-04-23T12:38:23.465626189Z","level":"INFO","msg":"sender: started","stream_id":"x8xkphjj"}
+{"time":"2025-04-23T12:38:23.465644557Z","level":"INFO","msg":"writer: Do: started","stream_id":"x8xkphjj"}
+{"time":"2025-04-23T12:38:23.665144948Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-23T18:23:23.876677268Z","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": context deadline exceeded"}
+{"time":"2025-04-23T19:46:53.907578897Z","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": context deadline exceeded"}
+{"time":"2025-04-23T19:50:56.496869912Z","level":"INFO","msg":"api: retrying HTTP error","status":502,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/x8xkphjj/file_stream","body":"\n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>502 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n"}

@@ -58,7 +58,196 @@ class SGD(Optimizer):  # noqa: D101
             differentiable=differentiable,
             fused=fused,
         )
- 
+
+import math
+from typing import Optional, Iterable
+import torch
+from torch.optim.optimizer import Optimizer
+
+class DynamicAlphaGrad(Optimizer):
+    r"""Adaptive AlphaGrad (stateless, tanh-clipped SGD).
+
+    The steepness α is *learned online* per parameter tensor using
+        α_hat = kappa * (‖g‖₂ + eps) / (σ + eps) *
+                (d_L / d_tot)^beta * (p_star / (S_prev + eps))^eta
+        α     ← clip( (1-ρ) α_prev + ρ α_hat , [α_min, α_max] )
+
+    Args:
+        params (iterable): model parameters
+        lr (float): learning rate
+        momentum, dampening, weight_decay, nesterov … identical to SGD
+        hyper (dict, optional): overrides for kappa, beta, eta, rho,
+                                p_star, tau, alpha_min, alpha_max, eps
+    """
+
+    def __init__(
+        self,
+        params: Iterable,
+        lr: float = 1e-3,
+        momentum: float = 0.0,
+        dampening: float = 0.0,
+        weight_decay: float = 0.0,
+        nesterov: bool = False,
+        *,
+        maximize: bool = False,
+        foreach: Optional[bool] = None,
+        differentiable: bool = False,
+        fused: Optional[bool] = None,
+        hyper: Optional[dict] = None,
+    ):
+        # ---------- hyper-parameter defaults ----------
+        h = dict(
+            tau=1.5,
+            p_star=0.10,
+            kappa=None,          # filled in below
+            beta=1 / 3,
+            eta=0.5,
+            rho=0.05,
+            eps=1e-8,
+            alpha_min=1e-12,
+            alpha_max=1e12,
+        )
+        if hyper:
+            h.update(hyper)
+
+        if h["p_star"] <= 0 or h["p_star"] >= 1:
+            raise ValueError("p_star must be in (0,1)")
+        if h["kappa"] is None:
+            # kappa = tau / Φ⁻¹(1 - p★/2)
+            inv = torch.distributions.normal.Normal(0, 1).icdf(
+                torch.tensor(1 - h["p_star"] / 2)
+            )
+            h["kappa"] = h["tau"] / inv.item()
+
+        self.h = h
+
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            dampening=dampening,
+            weight_decay=weight_decay,
+            nesterov=nesterov,
+            maximize=maximize,
+            foreach=foreach,
+            differentiable=differentiable,
+            fused=fused,
+        )
+        super().__init__(params, defaults)
+        super().__init__(params, defaults)
+
+        # ---- total #params across ALL groups ----
+        self.d_total = sum(
+            p.numel()
+            for group in self.param_groups
+            for p in group["params"]
+            if p.requires_grad
+        )
+
+    # -------------------------------------------------
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        # shorthand
+        h = self.h
+        for group in self.param_groups:
+            params_with_grad, grads = [], []
+            momentum_bufs = []
+            has_sparse = self._init_group(
+                group, params_with_grad, grads, momentum_bufs
+            )
+            if has_sparse:
+                raise RuntimeError("Sparse gradients are not supported by AlphaGrad")
+
+            for p, g, buf in zip(params_with_grad, grads, momentum_bufs):
+                state = self.state[p]
+
+                # ---------------- stats ----------------
+                N = g.norm(2)                      # ‖g‖₂
+                sigma = g.std(unbiased=False)
+                d_L = p.numel()
+
+                # previous alpha & saturation
+                if "alpha" not in state:
+                    state["alpha"] = torch.full_like(N, 1.0)
+                    state["sat_ratio"] = torch.zeros_like(N)
+
+                alpha_prev = state["alpha"]
+                S_prev = state["sat_ratio"]
+
+                # ---------------- adaptive α ------------
+                alpha_hat = (
+                    h["kappa"]
+                    * (N + h["eps"])
+                    / (sigma + h["eps"])
+                    * (d_L / self.d_total) ** h["beta"]
+                    * (h["p_star"] / (S_prev + h["eps"])) ** h["eta"]
+                )
+                # EMA + clip
+                alpha_new = (1 - h["rho"]) * alpha_prev + h["rho"] * alpha_hat
+                alpha_new = alpha_new.clamp(h["alpha_min"], h["alpha_max"])
+                state["alpha"] = alpha_new
+
+                # --------- normalise & clip gradient ----
+                g_norm = g / (N + h["eps"])
+                g_prime = torch.tanh(alpha_new * g_norm)
+
+                # record new saturation ratio for next step
+                state["sat_ratio"] = (alpha_new * g_norm).abs().gt(h["tau"]).float().mean()
+
+                # weight decay (decoupled)
+                if group["weight_decay"]:
+                    g_prime = g_prime.add(p.data, alpha=group["weight_decay"])
+
+                # momentum
+                if group["momentum"] != 0.0:
+                    if buf is None:
+                        buf = state["momentum_buffer"] = torch.clone(g_prime)
+                    else:
+                        buf.mul_(group["momentum"]).add_(
+                            g_prime, alpha=1 - group["dampening"]
+                        )
+                    if group["nesterov"]:
+                        update = g_prime.add(buf, alpha=group["momentum"])
+                    else:
+                        update = buf
+                else:
+                    update = g_prime
+
+                # maximise?
+                if group["maximize"]:
+                    update = -update
+
+                # parameter update
+                p.add_(update, alpha=-group["lr"])
+
+        return loss
+
+    # -------------------------------------------------
+    # helper copied from SGD implementation
+    def _init_group(self, group, params, grads, momentum_buffer_list):
+        has_sparse = False
+        for p in group["params"]:
+            if p.grad is not None:
+                if group["fused"] and getattr(
+                    self, "_need_device_dtype_check_for_fused", True
+                ):
+                    _use_fused._device_dtype_check_for_fused(p)
+                    self._need_device_dtype_check_for_fused = False
+                params.append(p)
+                grads.append(p.grad)
+                if p.grad.is_sparse:
+                    has_sparse = True
+                if group["momentum"] != 0:
+                    state = self.state[p]
+                    momentum_buffer_list.append(state.get("momentum_buffer"))
+        return has_sparse
+
+
 class AlphaGrad(Optimizer):
     r"""AlphaGrad: layer-wise tanh‐clipped SGD optimizer for PyTorch.
  

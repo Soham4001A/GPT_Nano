@@ -1,0 +1,42 @@
+{
+  "os": "Linux-6.8.0-1013-nvidia-64k-aarch64-with-glibc2.35",
+  "python": "CPython 3.10.12",
+  "startedAt": "2025-04-23T20:01:19.668540Z",
+  "program": "/home/ubuntu/LMA_GPT_Nano/train.py",
+  "codePath": "train.py",
+  "git": {
+    "remote": "git@github.com:Soham4001A/LMA_GPT_Nano.git",
+    "commit": "9f1a9dea44a3ee02415f83d67d4d304522e64124"
+  },
+  "email": "soham.dav@gmail.com",
+  "root": "/home/ubuntu/LMA_GPT_Nano",
+  "host": "192-222-51-13",
+  "executable": "/usr/bin/python3",
+  "codePathLocal": "train.py",
+  "cpu_count": 64,
+  "cpu_count_logical": 64,
+  "gpu": "NVIDIA GH200 480GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "4261618229248",
+      "used": "169478000640"
+    }
+  },
+  "memory": {
+    "total": "564442824704"
+  },
+  "cpu": {
+    "count": 64,
+    "countLogical": 64
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GH200 480GB",
+      "memoryTotal": "102625181696",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    }
+  ],
+  "cudaVersion": "12.8"
+}
