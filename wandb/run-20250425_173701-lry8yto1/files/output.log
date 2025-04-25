@@ -1,0 +1,42 @@
+
+Starting training loop from iteration 0...
+
+--- Evaluating at Step 0 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:35, 46.54it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 23.86% (2396/10042)
+--- Finished HellaSwag Evaluation ---
+step 0: train loss 10.9783, val loss 10.9765, HellaSwag Acc: 0.2386
+------------------------------------
+New best validation loss: 10.9765
+iter 0: loss 10.9823, time 240274.66ms, mfu -100.00% lr 4.50e-08
+iter 10: loss 10.1801, time 4024.35ms, mfu 33.49% lr 4.95e-07
+iter 20: loss 9.5135, time 4042.99ms, mfu 33.47% lr 9.45e-07
+iter 30: loss 9.1397, time 4008.16ms, mfu 33.48% lr 1.39e-06
+iter 40: loss 8.9246, time 4024.65ms, mfu 33.48% lr 1.84e-06
+iter 50: loss 8.5905, time 4044.16ms, mfu 33.47% lr 2.29e-06
+iter 60: loss 8.2397, time 4048.56ms, mfu 33.45% lr 2.74e-06
+iter 70: loss 7.8068, time 4043.03ms, mfu 33.44% lr 3.19e-06
+iter 80: loss 7.6122, time 4034.55ms, mfu 33.43% lr 3.64e-06
+iter 90: loss 7.4901, time 4003.07ms, mfu 33.46% lr 4.09e-06
+iter 100: loss 7.1343, time 4004.87ms, mfu 33.48% lr 4.54e-06
+iter 110: loss 6.8646, time 3997.74ms, mfu 33.50% lr 4.99e-06
+iter 120: loss 6.8465, time 4000.31ms, mfu 33.52% lr 5.44e-06
+iter 130: loss 6.5914, time 4025.56ms, mfu 33.51% lr 5.89e-06
+iter 140: loss 6.6361, time 4034.49ms, mfu 33.50% lr 6.34e-06
+iter 150: loss 6.7139, time 4039.24ms, mfu 33.49% lr 6.79e-06
+iter 160: loss 6.5722, time 4015.03ms, mfu 33.50% lr 7.24e-06
+iter 170: loss 6.4356, time 4039.70ms, mfu 33.48% lr 7.69e-06
+iter 180: loss 6.2200, time 4045.66ms, mfu 33.46% lr 8.14e-06
+iter 190: loss 6.2226, time 4040.68ms, mfu 33.45% lr 8.59e-06
+iter 200: loss 6.3716, time 4022.47ms, mfu 33.46% lr 9.04e-06
+iter 210: loss 6.3738, time 4013.57ms, mfu 33.47% lr 9.49e-06
+iter 220: loss 6.3366, time 4015.82ms, mfu 33.48% lr 9.94e-06
+iter 230: loss 6.3858, time 4005.33ms, mfu 33.49% lr 1.04e-05
+iter 240: loss 6.2985, time 4029.88ms, mfu 33.49% lr 1.08e-05
+iter 250: loss 6.1553, time 4023.13ms, mfu 33.49% lr 1.13e-05

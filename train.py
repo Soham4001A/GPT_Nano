@@ -75,7 +75,7 @@ use_gated_reduction = False # Default to standard GPT
 # gating_d_new will be calculated after config loading based on n_embd & d_reduction_factor
 # -----------------------------------------
 # adamw optimizer
-learning_rate = 4e-4 # max learning rate
+learning_rate = 9e-5 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 0.1
 beta1 = 0.9
@@ -85,7 +85,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+min_lr = 1e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla # CHANGED!!!!!!!!!! FROM 6E-5
 # DDP settings
 backend = 'nccl' # Default backend, will be adjusted based on device
 # system
