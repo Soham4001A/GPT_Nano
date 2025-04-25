@@ -64,6 +64,200 @@ from typing import Optional, Iterable
 import torch
 from torch.optim.optimizer import Optimizer
 
+class DAG(Optimizer):
+    r"""AlphaGrad + adaptive α + RMS-driven curve–shrink."""
+
+    def __init__(
+        self,
+        params: Iterable,
+        lr: float = 1e-3,
+        momentum: float = 0.0,
+        dampening: float = 0.0,
+        weight_decay: float = 0.0,
+        k_val: float = 1.0,
+        nesterov: bool = False,
+        *,
+        maximize: bool = False,
+        foreach: Optional[bool] = None,
+        differentiable: bool = False,
+        fused: Optional[bool] = None,
+        hyper: Optional[dict] = None,      # α-controller knobs (τ, p*, β, …)
+        shrink: Optional[dict] = None,     # RMS-shrink knobs (λ, s_min, γ, β_ema)
+    ):
+        # ───────── α-controller defaults ─────────
+        h = dict(
+            tau=1.5,
+            p_star=0.10,
+            kappa=None,          # filled below
+            beta=1 / 3,
+            eta=0.5,
+            rho=0.05,
+            eps=1e-8,
+            alpha_min=1e-12,
+            alpha_max=1e12,
+        )
+        if hyper:
+            h.update(hyper)
+
+        if h["kappa"] is None:
+            inv = torch.distributions.normal.Normal(0, 1).icdf(
+                torch.tensor(1 - h["p_star"] / 2)
+            )
+            h["kappa"] = h["tau"] / inv.item()
+        self.h = h
+        self.k_val = float(k_val)
+
+        # ───────── RMS-shrink defaults ─────────
+        s = dict(
+            lambda_rms=0.3,      # λ in notes
+            s_min=0.1,
+            gamma=1.0,
+            ema_beta=0.98,
+            warmup_steps=500,    # collect baseline RMS₀
+        )
+        if shrink:
+            s.update(shrink)
+        self.s_cfg = s
+
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            dampening=dampening,
+            weight_decay=weight_decay,
+            nesterov=nesterov,
+            maximize=maximize,
+            foreach=foreach,
+            differentiable=differentiable,
+            fused=fused,
+        )
+        super().__init__(params, defaults)
+
+        # total parameters for β term
+        self.d_total = sum(
+            p.numel()
+            for group in self.param_groups
+            for p in group["params"]
+            if p.requires_grad
+        )
+
+        # ───────── RMS-driven state ─────────
+        self.global_step = 0
+        self.rms0_ema = None      # baseline
+        self.rms_t_ema = None     # current EMA
+        self.s_t = 1.0
+
+    # -------------------------------------------------
+    @torch.no_grad()
+    def step(self, closure=None):
+        if closure is not None:
+            with torch.enable_grad():
+                closure()
+
+        h, scfg = self.h, self.s_cfg
+        total_sq, total_n = 0.0, 0
+
+        for group in self.param_groups:
+            params_with_grad, grads, bufs = [], [], []
+            if self._init_group(group, params_with_grad, grads, bufs):
+                raise RuntimeError("Sparse gradients not supported.")
+
+            for p, g, buf in zip(params_with_grad, grads, bufs):
+                state = self.state[p]
+
+                # initialise per-tensor state
+                if "alpha" not in state:
+                    state["alpha"] = torch.full_like(g.norm(), 1.0)
+                    state["sat_ratio"] = torch.zeros_like(g.norm())
+
+                # raw stats
+                N      = g.norm(2)
+                sigma  = g.std(unbiased=False)
+                d_L    = p.numel()
+
+                alpha_prev = state["alpha"]
+                S_prev     = state["sat_ratio"]
+
+                # α̂ with all factors  (eq. 4 *including* s_t)
+                alpha_hat = (
+                    h["kappa"]
+                    * (N + h["eps"]) / (sigma + h["eps"])
+                    * (d_L / self.d_total) ** h["beta"]
+                    * (h["p_star"] / (S_prev + h["eps"])) ** h["eta"]
+                    * self.s_t                                    # <── NEW
+                )
+
+                # EMA + clip
+                alpha_new = (1 - h["rho"]) * alpha_prev + h["rho"] * alpha_hat
+                alpha_new = alpha_new.clamp(h["alpha_min"], h["alpha_max"])
+                state["alpha"] = alpha_new
+
+                # transform gradient  (double-scaled tanh)
+                g_norm  = g / (N + h["eps"])
+                g_prime = self.k_val * self.s_t * torch.tanh((alpha_new / self.s_t) * g_norm)
+
+                # update sat-ratio for next step
+                state["sat_ratio"] = (alpha_new * g_norm).abs().gt(h["tau"]).float().mean()
+
+                # weight decay
+                if group["weight_decay"]:
+                    g_prime = g_prime.add(p.data, alpha=group["weight_decay"])
+
+                # momentum handling
+                if group["momentum"]:
+                    if buf is None:
+                        buf = state["momentum_buffer"] = torch.clone(g_prime)
+                    else:
+                        buf.mul_(group["momentum"]).add_(g_prime, alpha=1 - group["dampening"])
+                    update = g_prime.add(buf, alpha=group["momentum"]) if group["nesterov"] else buf
+                else:
+                    update = g_prime
+
+                if group["maximize"]:
+                    update = -update
+
+                # parameter update
+                p.add_(update, alpha=-group["lr"])
+
+                # accumulate squared update for RMS
+                total_sq += (group["lr"] * update).pow(2).sum().item()
+                total_n  += update.numel()
+
+        # --- RMS & shrink update (once per step) ---
+        rms_now = math.sqrt(total_sq / max(1, total_n))
+
+        β_ema = scfg["ema_beta"]
+        self.rms_t_ema = rms_now if self.rms_t_ema is None else \
+                         β_ema * self.rms_t_ema + (1-β_ema) * rms_now
+
+        if self.global_step < scfg["warmup_steps"]:
+            self.rms0_ema = self.rms_t_ema if self.rms0_ema is None else \
+                            β_ema * self.rms0_ema + (1-β_ema) * self.rms_t_ema
+        else:
+            if self.rms0_ema is None:           # safety
+                self.rms0_ema = self.rms_t_ema
+            ratio  = self.rms_t_ema / (scfg["lambda_rms"] * self.rms0_ema)
+            ratio  = max(0.0, min(1.0, ratio))  # clamp
+            self.s_t = scfg["s_min"] + (1 - scfg["s_min"]) * (ratio ** scfg["gamma"])
+
+        self.global_step += 1
+        return None
+    # ------------------------------------------------------------------
+    # helper: collect dense params & momentum buffers (no sparse support)
+    def _init_group(self, group, params, grads, momentum_buffer_list):
+        has_sparse = False
+        for p in group["params"]:
+            if p.grad is None:
+                continue
+            params.append(p)
+            grads.append(p.grad)
+            if p.grad.is_sparse:
+                has_sparse = True
+            if group["momentum"] != 0:
+                state = self.state[p]
+                momentum_buffer_list.append(state.get("momentum_buffer"))
+        return has_sparse
+    # ------------------------------------------------------------------
+
 class DynamicAlphaGrad(Optimizer):
     r"""Adaptive AlphaGrad (stateless, tanh-clipped SGD).
 
@@ -87,6 +281,7 @@ class DynamicAlphaGrad(Optimizer):
         momentum: float = 0.0,
         dampening: float = 0.0,
         weight_decay: float = 0.0,
+        k_val: float = 1.0,
         nesterov: bool = False,
         *,
         maximize: bool = False,
@@ -97,7 +292,7 @@ class DynamicAlphaGrad(Optimizer):
     ):
         # ---------- hyper-parameter defaults ----------
         h = dict(
-            tau=1.5,
+            tau=1.25,
             p_star=0.10,
             kappa=None,          # filled in below
             beta=1 / 3,
@@ -120,6 +315,7 @@ class DynamicAlphaGrad(Optimizer):
             h["kappa"] = h["tau"] / inv.item()
 
         self.h = h
+        self.k_val = k_val
 
         defaults = dict(
             lr=lr,
@@ -194,7 +390,7 @@ class DynamicAlphaGrad(Optimizer):
 
                 # --------- normalise & clip gradient ----
                 g_norm = g / (N + h["eps"])
-                g_prime = torch.tanh(alpha_new * g_norm)
+                g_prime = self.k_val * torch.tanh(alpha_new * g_norm)
 
                 # record new saturation ratio for next step
                 state["sat_ratio"] = (alpha_new * g_norm).abs().gt(h["tau"]).float().mean()

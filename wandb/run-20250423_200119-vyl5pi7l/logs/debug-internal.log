@@ -5,3 +5,5 @@
 {"time":"2025-04-23T20:01:19.820602206Z","level":"INFO","msg":"handler: started","stream_id":"vyl5pi7l"}
 {"time":"2025-04-23T20:01:19.820577662Z","level":"INFO","msg":"sender: started","stream_id":"vyl5pi7l"}
 {"time":"2025-04-23T20:01:19.94192199Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-24T00:56:25.294742675Z","level":"INFO","msg":"api: retrying HTTP error","status":500,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/vyl5pi7l/file_stream","body":"{\"error\":\"context deadline exceeded\"}"}
+{"time":"2025-04-24T20:56:34.982826978Z","level":"INFO","msg":"api: retrying HTTP error","status":502,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/vyl5pi7l/file_stream","body":"\n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>502 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n"}

@@ -395,3 +395,20 @@ iter 3320: loss 3.9044, time 4000.17ms, mfu 34.90% lr 1.00e-04
 iter 3330: loss 3.9342, time 3993.53ms, mfu 34.78% lr 1.00e-04
 iter 3340: loss 3.7565, time 3998.95ms, mfu 34.67% lr 1.00e-04
 iter 3350: loss 3.6911, time 4004.51ms, mfu 34.57% lr 1.00e-04
+iter 3360: loss 3.6064, time 3997.43ms, mfu 34.49% lr 1.00e-04
+iter 3370: loss 3.7358, time 4016.00ms, mfu 34.39% lr 1.00e-04
+iter 3380: loss 3.7479, time 3994.02ms, mfu 34.33% lr 1.00e-04
+iter 3390: loss 3.8280, time 3999.52ms, mfu 34.26% lr 1.00e-04
+iter 3400: loss 3.8466, time 4015.52ms, mfu 34.19% lr 1.00e-04
+Traceback (most recent call last):
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 653, in <module>
+    X, Y = get_batch('train') # Get next batch simple way
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 245, in get_batch
+    x = torch.stack([torch.from_numpy(data[i:i+block_size].astype(np.int64)) for i in ix]).to(device)
+KeyboardInterrupt
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 653, in <module>
+[rank0]:     X, Y = get_batch('train') # Get next batch simple way
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 245, in get_batch
+[rank0]:     x = torch.stack([torch.from_numpy(data[i:i+block_size].astype(np.int64)) for i in ix]).to(device)
+[rank0]: KeyboardInterrupt

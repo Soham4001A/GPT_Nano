@@ -269,3 +269,2011 @@ iter 2210: loss 3.8312, time 4018.00ms, mfu 34.18% lr 2.00e-04
 iter 2220: loss 4.1985, time 4013.33ms, mfu 34.12% lr 2.00e-04
 iter 2230: loss 3.8851, time 4022.80ms, mfu 34.05% lr 2.00e-04
 iter 2240: loss 3.8883, time 4012.91ms, mfu 34.01% lr 2.00e-04
+iter 2250: loss 3.8491, time 4019.59ms, mfu 33.96% lr 2.00e-04
+iter 2260: loss 3.8403, time 4017.72ms, mfu 33.92% lr 2.00e-04
+iter 2270: loss 3.9691, time 4010.36ms, mfu 33.89% lr 2.00e-04
+iter 2280: loss 3.8395, time 4009.57ms, mfu 33.86% lr 2.00e-04
+iter 2290: loss 3.8104, time 4019.42ms, mfu 33.82% lr 2.00e-04
+iter 2300: loss 3.6316, time 4011.45ms, mfu 33.80% lr 2.00e-04
+iter 2310: loss 3.9939, time 3805.99ms, mfu 33.96% lr 2.00e-04
+iter 2320: loss 3.9474, time 2300.93ms, mfu 36.42% lr 2.00e-04
+iter 2330: loss 3.8972, time 2298.30ms, mfu 38.64% lr 2.00e-04
+iter 2340: loss 3.7652, time 2373.72ms, mfu 40.46% lr 2.00e-04
+iter 2350: loss 3.6292, time 2375.96ms, mfu 42.08% lr 2.00e-04
+iter 2360: loss 3.9227, time 2372.35ms, mfu 43.55% lr 2.00e-04
+iter 2370: loss 3.9210, time 2378.92ms, mfu 44.86% lr 2.00e-04
+iter 2380: loss 3.8526, time 2375.61ms, mfu 46.05% lr 2.00e-04
+iter 2390: loss 4.0001, time 3988.51ms, mfu 44.82% lr 2.00e-04
+iter 2400: loss 3.8685, time 4021.74ms, mfu 43.69% lr 2.00e-04
+iter 2410: loss 3.7450, time 4032.16ms, mfu 42.66% lr 2.00e-04
+iter 2420: loss 3.8722, time 4024.05ms, mfu 41.75% lr 2.00e-04
+iter 2430: loss 3.9278, time 4027.43ms, mfu 40.92% lr 2.00e-04
+iter 2440: loss 3.9263, time 4015.15ms, mfu 40.18% lr 2.00e-04
+iter 2450: loss 3.7032, time 4024.93ms, mfu 39.51% lr 2.00e-04
+iter 2460: loss 3.8472, time 4019.66ms, mfu 38.91% lr 2.00e-04
+iter 2470: loss 3.6970, time 4022.59ms, mfu 38.37% lr 2.00e-04
+iter 2480: loss 3.6780, time 4023.35ms, mfu 37.88% lr 2.00e-04
+iter 2490: loss 3.8513, time 4022.37ms, mfu 37.45% lr 2.00e-04
+iter 2500: loss 3.7567, time 4018.03ms, mfu 37.06% lr 2.00e-04
+iter 2510: loss 3.8667, time 4018.35ms, mfu 36.70% lr 2.00e-04
+iter 2520: loss 3.7386, time 4021.81ms, mfu 36.38% lr 2.00e-04
+iter 2530: loss 3.8990, time 4016.35ms, mfu 36.10% lr 2.00e-04
+iter 2540: loss 3.6562, time 4022.89ms, mfu 35.84% lr 2.00e-04
+iter 2550: loss 3.8280, time 4022.96ms, mfu 35.61% lr 2.00e-04
+iter 2560: loss 3.8052, time 4015.18ms, mfu 35.40% lr 2.00e-04
+iter 2570: loss 3.9079, time 4018.55ms, mfu 35.21% lr 2.00e-04
+iter 2580: loss 3.9044, time 4018.72ms, mfu 35.05% lr 2.00e-04
+iter 2590: loss 3.7961, time 4020.51ms, mfu 34.89% lr 2.00e-04
+iter 2600: loss 3.8872, time 4015.32ms, mfu 34.76% lr 2.00e-04
+iter 2610: loss 3.7406, time 4011.96ms, mfu 34.64% lr 2.00e-04
+iter 2620: loss 3.7309, time 4010.43ms, mfu 34.54% lr 2.00e-04
+iter 2630: loss 3.5944, time 4015.05ms, mfu 34.44% lr 2.00e-04
+iter 2640: loss 3.9280, time 4023.64ms, mfu 34.35% lr 2.00e-04
+iter 2650: loss 3.8953, time 4021.38ms, mfu 34.26% lr 2.00e-04
+iter 2660: loss 3.7617, time 4004.94ms, mfu 34.20% lr 2.00e-04
+iter 2670: loss 3.4982, time 4008.80ms, mfu 34.14% lr 2.00e-04
+iter 2680: loss 3.7500, time 4024.85ms, mfu 34.08% lr 2.00e-04
+iter 2690: loss 3.7753, time 4026.70ms, mfu 34.02% lr 2.00e-04
+iter 2700: loss 3.8112, time 4022.16ms, mfu 33.96% lr 2.00e-04
+iter 2710: loss 3.7422, time 4017.60ms, mfu 33.92% lr 2.00e-04
+iter 2720: loss 3.9512, time 4019.31ms, mfu 33.88% lr 2.00e-04
+iter 2730: loss 3.6911, time 4014.98ms, mfu 33.85% lr 2.00e-04
+iter 2740: loss 3.5590, time 4017.08ms, mfu 33.82% lr 2.00e-04
+iter 2750: loss 3.7703, time 4018.97ms, mfu 33.79% lr 2.00e-04
+iter 2760: loss 3.8093, time 4011.13ms, mfu 33.77% lr 2.00e-04
+iter 2770: loss 3.6844, time 4016.28ms, mfu 33.75% lr 2.00e-04
+iter 2780: loss 3.8314, time 4012.34ms, mfu 33.73% lr 2.00e-04
+iter 2790: loss 3.7721, time 4018.44ms, mfu 33.71% lr 2.00e-04
+iter 2800: loss 3.8271, time 4030.29ms, mfu 33.69% lr 2.00e-04
+iter 2810: loss 3.7257, time 4022.14ms, mfu 33.67% lr 2.00e-04
+iter 2820: loss 3.5610, time 4015.81ms, mfu 33.66% lr 2.00e-04
+iter 2830: loss 3.8150, time 4026.42ms, mfu 33.64% lr 2.00e-04
+iter 2840: loss 3.6787, time 4018.73ms, mfu 33.63% lr 2.00e-04
+iter 2850: loss 3.6569, time 4015.52ms, mfu 33.62% lr 2.00e-04
+iter 2860: loss 3.7465, time 4009.00ms, mfu 33.62% lr 2.00e-04
+iter 2870: loss 3.7983, time 4026.43ms, mfu 33.60% lr 2.00e-04
+iter 2880: loss 3.8044, time 4021.20ms, mfu 33.59% lr 2.00e-04
+iter 2890: loss 3.6687, time 4013.89ms, mfu 33.59% lr 2.00e-04
+iter 2900: loss 3.6605, time 4032.78ms, mfu 33.57% lr 2.00e-04
+iter 2910: loss 3.9074, time 4016.49ms, mfu 33.57% lr 2.00e-04
+iter 2920: loss 3.7507, time 4017.45ms, mfu 33.57% lr 2.00e-04
+iter 2930: loss 3.6250, time 4018.47ms, mfu 33.57% lr 2.00e-04
+iter 2940: loss 3.7535, time 4018.38ms, mfu 33.56% lr 2.00e-04
+iter 2950: loss 3.7587, time 4030.32ms, mfu 33.55% lr 2.00e-04
+iter 2960: loss 3.8237, time 4018.32ms, mfu 33.55% lr 2.00e-04
+iter 2970: loss 3.7487, time 4020.19ms, mfu 33.55% lr 2.00e-04
+iter 2980: loss 4.0120, time 4007.70ms, mfu 33.55% lr 2.00e-04
+iter 2990: loss 3.7076, time 4026.82ms, mfu 33.54% lr 2.00e-04
+
+--- Evaluating at Step 3000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:59, 55.87it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 25.42% (2553/10042)
+--- Finished HellaSwag Evaluation ---
+step 3000: train loss 3.6908, val loss 3.6939, HellaSwag Acc: 0.2542
+------------------------------------
+New best validation loss: 3.6939
+saving checkpoint to out/ckpt.pt
+iter 3000: loss 3.3818, time 197626.77ms, mfu 30.26% lr 2.00e-04
+iter 3010: loss 3.6573, time 4026.55ms, mfu 30.58% lr 2.00e-04
+iter 3020: loss 3.7002, time 4023.47ms, mfu 30.87% lr 2.00e-04
+iter 3030: loss 3.7258, time 4016.50ms, mfu 31.14% lr 2.00e-04
+iter 3040: loss 3.7841, time 4024.11ms, mfu 31.37% lr 2.00e-04
+iter 3050: loss 3.5231, time 4014.81ms, mfu 31.59% lr 2.00e-04
+iter 3060: loss 3.8119, time 4015.56ms, mfu 31.79% lr 2.00e-04
+iter 3070: loss 3.6566, time 4011.68ms, mfu 31.97% lr 2.00e-04
+iter 3080: loss 3.7789, time 4017.71ms, mfu 32.13% lr 2.00e-04
+iter 3090: loss 3.6474, time 4018.19ms, mfu 32.27% lr 2.00e-04
+iter 3100: loss 3.6574, time 4004.52ms, mfu 32.41% lr 2.00e-04
+iter 3110: loss 3.5919, time 4016.02ms, mfu 32.52% lr 2.00e-04
+iter 3120: loss 3.6020, time 4009.30ms, mfu 32.63% lr 2.00e-04
+iter 3130: loss 3.5621, time 4023.53ms, mfu 32.72% lr 2.00e-04
+iter 3140: loss 3.6049, time 4011.94ms, mfu 32.80% lr 2.00e-04
+iter 3150: loss 3.5714, time 4018.27ms, mfu 32.88% lr 2.00e-04
+iter 3160: loss 3.6641, time 4009.62ms, mfu 32.95% lr 2.00e-04
+iter 3170: loss 3.7147, time 4026.36ms, mfu 33.00% lr 2.00e-04
+iter 3180: loss 3.3509, time 4007.96ms, mfu 33.06% lr 2.00e-04
+iter 3190: loss 3.7636, time 4026.87ms, mfu 33.10% lr 2.00e-04
+iter 3200: loss 3.7424, time 4027.70ms, mfu 33.14% lr 2.00e-04
+iter 3210: loss 3.6359, time 4025.85ms, mfu 33.17% lr 2.00e-04
+iter 3220: loss 3.4478, time 4018.95ms, mfu 33.21% lr 2.00e-04
+iter 3230: loss 3.8354, time 4020.10ms, mfu 33.24% lr 2.00e-04
+iter 3240: loss 3.5951, time 4015.12ms, mfu 33.27% lr 2.00e-04
+iter 3250: loss 3.7667, time 4021.26ms, mfu 33.30% lr 2.00e-04
+iter 3260: loss 3.9585, time 4014.37ms, mfu 33.32% lr 2.00e-04
+iter 3270: loss 3.4219, time 4021.87ms, mfu 33.34% lr 2.00e-04
+iter 3280: loss 3.5715, time 4023.38ms, mfu 33.36% lr 2.00e-04
+iter 3290: loss 3.7621, time 4028.78ms, mfu 33.37% lr 2.00e-04
+iter 3300: loss 3.5819, time 3906.08ms, mfu 33.48% lr 2.00e-04
+iter 3310: loss 3.4857, time 2300.81ms, mfu 35.99% lr 2.00e-04
+iter 3320: loss 3.8581, time 2294.92ms, mfu 38.26% lr 2.00e-04
+iter 3330: loss 3.8641, time 2376.21ms, mfu 40.11% lr 2.00e-04
+iter 3340: loss 3.6836, time 2377.75ms, mfu 41.76% lr 2.00e-04
+iter 3350: loss 3.6124, time 2378.64ms, mfu 43.25% lr 2.00e-04
+iter 3360: loss 3.5513, time 2373.38ms, mfu 44.60% lr 2.00e-04
+iter 3370: loss 3.6590, time 2379.25ms, mfu 45.81% lr 2.00e-04
+iter 3380: loss 3.6702, time 4011.89ms, mfu 44.59% lr 2.00e-04
+iter 3390: loss 3.7452, time 4019.66ms, mfu 43.48% lr 2.00e-04
+iter 3400: loss 3.7689, time 4026.27ms, mfu 42.48% lr 2.00e-04
+iter 3410: loss 3.5342, time 4021.39ms, mfu 41.58% lr 2.00e-04
+iter 3420: loss 3.5915, time 4013.44ms, mfu 40.78% lr 2.00e-04
+iter 3430: loss 3.5957, time 4019.51ms, mfu 40.06% lr 2.00e-04
+iter 3440: loss 3.8519, time 4014.40ms, mfu 39.41% lr 2.00e-04
+iter 3450: loss 3.6627, time 4019.07ms, mfu 38.82% lr 2.00e-04
+iter 3460: loss 3.6779, time 4016.64ms, mfu 38.29% lr 2.00e-04
+iter 3470: loss 3.6462, time 4020.05ms, mfu 37.81% lr 2.00e-04
+iter 3480: loss 3.5658, time 4008.85ms, mfu 37.39% lr 2.00e-04
+iter 3490: loss 3.7515, time 4019.75ms, mfu 37.01% lr 2.00e-04
+iter 3500: loss 3.6343, time 4016.63ms, mfu 36.66% lr 2.00e-04
+iter 3510: loss 3.6257, time 4015.97ms, mfu 36.35% lr 2.00e-04
+iter 3520: loss 3.6737, time 4012.49ms, mfu 36.07% lr 2.00e-04
+iter 3530: loss 3.8379, time 4013.08ms, mfu 35.82% lr 2.00e-04
+iter 3540: loss 3.6135, time 4011.24ms, mfu 35.60% lr 2.00e-04
+iter 3550: loss 3.7344, time 4023.07ms, mfu 35.39% lr 2.00e-04
+iter 3560: loss 3.5985, time 4018.47ms, mfu 35.21% lr 2.00e-04
+iter 3570: loss 3.5815, time 4006.25ms, mfu 35.05% lr 2.00e-04
+iter 3580: loss 3.6396, time 4016.69ms, mfu 34.90% lr 2.00e-04
+iter 3590: loss 3.6738, time 4022.03ms, mfu 34.76% lr 2.00e-04
+iter 3600: loss 3.5602, time 4017.39ms, mfu 34.64% lr 2.00e-04
+iter 3610: loss 3.4859, time 4018.17ms, mfu 34.53% lr 2.00e-04
+iter 3620: loss 3.6617, time 4019.27ms, mfu 34.43% lr 2.00e-04
+iter 3630: loss 3.5363, time 4013.05ms, mfu 34.34% lr 2.00e-04
+iter 3640: loss 3.6326, time 4024.10ms, mfu 34.26% lr 2.00e-04
+iter 3650: loss 3.7724, time 4021.97ms, mfu 34.18% lr 2.00e-04
+iter 3660: loss 3.4664, time 4012.62ms, mfu 34.12% lr 2.00e-04
+iter 3670: loss 3.6560, time 4030.66ms, mfu 34.05% lr 2.00e-04
+iter 3680: loss 3.6764, time 4020.62ms, mfu 34.00% lr 2.00e-04
+iter 3690: loss 3.6070, time 4009.86ms, mfu 33.96% lr 2.00e-04
+iter 3700: loss 3.4205, time 4009.86ms, mfu 33.92% lr 2.00e-04
+iter 3710: loss 3.5794, time 4018.21ms, mfu 33.89% lr 2.00e-04
+iter 3720: loss 3.6953, time 4017.92ms, mfu 33.85% lr 2.00e-04
+iter 3730: loss 3.5208, time 4012.20ms, mfu 33.82% lr 2.00e-04
+iter 3740: loss 3.6904, time 4018.49ms, mfu 33.80% lr 2.00e-04
+iter 3750: loss 3.5059, time 4006.41ms, mfu 33.78% lr 2.00e-04
+iter 3760: loss 3.5047, time 4021.64ms, mfu 33.75% lr 2.00e-04
+iter 3770: loss 3.5440, time 4012.24ms, mfu 33.74% lr 2.00e-04
+iter 3780: loss 3.7816, time 4018.80ms, mfu 33.72% lr 2.00e-04
+iter 3790: loss 3.5126, time 4017.01ms, mfu 33.70% lr 2.00e-04
+iter 3800: loss 3.6578, time 4029.40ms, mfu 33.67% lr 2.00e-04
+iter 3810: loss 3.7213, time 4022.44ms, mfu 33.66% lr 2.00e-04
+iter 3820: loss 3.4173, time 4007.45ms, mfu 33.65% lr 2.00e-04
+iter 3830: loss 3.5530, time 4018.32ms, mfu 33.64% lr 2.00e-04
+iter 3840: loss 3.6873, time 4024.18ms, mfu 33.63% lr 2.00e-04
+iter 3850: loss 3.4650, time 4014.61ms, mfu 33.62% lr 2.00e-04
+iter 3860: loss 3.5097, time 4014.51ms, mfu 33.61% lr 2.00e-04
+iter 3870: loss 3.2972, time 4012.89ms, mfu 33.61% lr 2.00e-04
+iter 3880: loss 3.5943, time 4015.12ms, mfu 33.61% lr 2.00e-04
+iter 3890: loss 3.6490, time 4016.95ms, mfu 33.60% lr 2.00e-04
+iter 3900: loss 3.6341, time 4012.89ms, mfu 33.60% lr 2.00e-04
+iter 3910: loss 3.5505, time 4003.98ms, mfu 33.60% lr 2.00e-04
+iter 3920: loss 3.5567, time 4017.46ms, mfu 33.60% lr 2.00e-04
+iter 3930: loss 3.6467, time 4012.23ms, mfu 33.60% lr 2.00e-04
+iter 3940: loss 3.8426, time 4015.21ms, mfu 33.59% lr 2.00e-04
+iter 3950: loss 3.7082, time 4015.67ms, mfu 33.59% lr 2.00e-04
+iter 3960: loss 3.7996, time 4015.36ms, mfu 33.59% lr 2.00e-04
+iter 3970: loss 3.3917, time 4012.54ms, mfu 33.59% lr 2.00e-04
+iter 3980: loss 3.5525, time 4018.52ms, mfu 33.58% lr 2.00e-04
+iter 3990: loss 3.4643, time 4018.09ms, mfu 33.58% lr 2.00e-04
+
+--- Evaluating at Step 4000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:59, 56.04it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 25.84% (2595/10042)
+--- Finished HellaSwag Evaluation ---
+step 4000: train loss 3.5576, val loss 3.5581, HellaSwag Acc: 0.2584
+------------------------------------
+New best validation loss: 3.5581
+saving checkpoint to out/ckpt.pt
+iter 4000: loss 3.5387, time 196958.82ms, mfu 30.29% lr 2.00e-04
+iter 4010: loss 3.5396, time 4020.36ms, mfu 30.61% lr 2.00e-04
+iter 4020: loss 3.5634, time 4015.70ms, mfu 30.91% lr 2.00e-04
+iter 4030: loss 3.5769, time 4007.26ms, mfu 31.18% lr 2.00e-04
+iter 4040: loss 3.6765, time 4046.59ms, mfu 31.39% lr 2.00e-04
+iter 4050: loss 3.6809, time 4018.12ms, mfu 31.60% lr 2.00e-04
+iter 4060: loss 3.5206, time 4021.74ms, mfu 31.79% lr 2.00e-04
+iter 4070: loss 3.5673, time 4027.54ms, mfu 31.96% lr 2.00e-04
+iter 4080: loss 3.2556, time 4023.30ms, mfu 32.11% lr 2.00e-04
+iter 4090: loss 3.3910, time 4020.04ms, mfu 32.26% lr 2.00e-04
+iter 4100: loss 3.4586, time 4022.89ms, mfu 32.38% lr 2.00e-04
+iter 4110: loss 3.7451, time 4025.40ms, mfu 32.49% lr 2.00e-04
+iter 4120: loss 3.4314, time 4015.06ms, mfu 32.60% lr 2.00e-04
+iter 4130: loss 3.6158, time 4016.59ms, mfu 32.69% lr 2.00e-04
+iter 4140: loss 3.5154, time 4017.73ms, mfu 32.78% lr 2.00e-04
+iter 4150: loss 3.4356, time 4012.59ms, mfu 32.86% lr 2.00e-04
+iter 4160: loss 3.7721, time 4011.67ms, mfu 32.93% lr 2.00e-04
+iter 4170: loss 3.5514, time 4020.63ms, mfu 32.99% lr 2.00e-04
+iter 4180: loss 3.5872, time 4022.48ms, mfu 33.04% lr 2.00e-04
+iter 4190: loss 3.6313, time 4012.09ms, mfu 33.09% lr 2.00e-04
+iter 4200: loss 3.7124, time 4017.82ms, mfu 33.14% lr 2.00e-04
+iter 4210: loss 3.4247, time 4022.34ms, mfu 33.18% lr 2.00e-04
+iter 4220: loss 3.4985, time 4018.83ms, mfu 33.21% lr 2.00e-04
+iter 4230: loss 3.6188, time 4027.29ms, mfu 33.24% lr 2.00e-04
+iter 4240: loss 3.5688, time 4014.24ms, mfu 33.27% lr 2.00e-04
+iter 4250: loss 3.5529, time 4007.87ms, mfu 33.30% lr 2.00e-04
+iter 4260: loss 3.7833, time 4026.01ms, mfu 33.32% lr 2.00e-04
+iter 4270: loss 3.4480, time 4033.37ms, mfu 33.33% lr 2.00e-04
+iter 4280: loss 3.4313, time 4014.85ms, mfu 33.35% lr 2.00e-04
+iter 4290: loss 3.6969, time 4009.92ms, mfu 33.38% lr 2.00e-04
+iter 4300: loss 3.5549, time 2301.06ms, mfu 35.90% lr 2.00e-04
+iter 4310: loss 3.4540, time 2289.35ms, mfu 38.19% lr 2.00e-04
+iter 4320: loss 3.4209, time 2380.28ms, mfu 40.04% lr 2.00e-04
+iter 4330: loss 3.5788, time 2385.29ms, mfu 41.68% lr 2.00e-04
+iter 4340: loss 3.2638, time 2386.82ms, mfu 43.16% lr 2.00e-04
+iter 4350: loss 3.4940, time 2384.05ms, mfu 44.50% lr 2.00e-04
+iter 4360: loss 3.4740, time 2381.82ms, mfu 45.70% lr 2.00e-04
+iter 4370: loss 3.3904, time 4013.64ms, mfu 44.49% lr 2.00e-04
+iter 4380: loss 3.5130, time 4012.52ms, mfu 43.40% lr 2.00e-04
+iter 4390: loss 3.3846, time 4025.18ms, mfu 42.41% lr 2.00e-04
+iter 4400: loss 3.5393, time 4002.18ms, mfu 41.53% lr 2.00e-04
+iter 4410: loss 3.4974, time 4019.35ms, mfu 40.73% lr 2.00e-04
+iter 4420: loss 3.6657, time 4009.92ms, mfu 40.02% lr 2.00e-04
+iter 4430: loss 3.5514, time 4020.49ms, mfu 39.37% lr 2.00e-04
+iter 4440: loss 3.5025, time 4004.51ms, mfu 38.80% lr 2.00e-04
+iter 4450: loss 3.4870, time 4019.47ms, mfu 38.27% lr 2.00e-04
+iter 4460: loss 3.4987, time 4020.56ms, mfu 37.80% lr 2.00e-04
+iter 4470: loss 3.5145, time 4021.80ms, mfu 37.37% lr 2.00e-04
+iter 4480: loss 3.7510, time 4017.85ms, mfu 36.98% lr 2.00e-04
+iter 4490: loss 3.3699, time 4020.85ms, mfu 36.64% lr 2.00e-04
+iter 4500: loss 3.3720, time 4018.41ms, mfu 36.33% lr 2.00e-04
+iter 4510: loss 3.5715, time 4019.61ms, mfu 36.05% lr 2.00e-04
+iter 4520: loss 3.1662, time 4019.89ms, mfu 35.79% lr 2.00e-04
+iter 4530: loss 3.4958, time 4012.02ms, mfu 35.57% lr 2.00e-04
+iter 4540: loss 3.4487, time 4020.86ms, mfu 35.37% lr 2.00e-04
+iter 4550: loss 3.5964, time 4011.92ms, mfu 35.19% lr 2.00e-04
+iter 4560: loss 3.5341, time 4023.66ms, mfu 35.02% lr 2.00e-04
+iter 4570: loss 3.5620, time 4018.00ms, mfu 34.87% lr 2.00e-04
+iter 4580: loss 3.5911, time 4019.98ms, mfu 34.74% lr 2.00e-04
+iter 4590: loss 3.4700, time 4021.92ms, mfu 34.61% lr 2.00e-04
+iter 4600: loss 3.5037, time 4017.37ms, mfu 34.51% lr 2.00e-04
+iter 4610: loss 3.6041, time 4014.50ms, mfu 34.41% lr 2.00e-04
+iter 4620: loss 3.3236, time 4016.93ms, mfu 34.33% lr 2.00e-04
+iter 4630: loss 3.5772, time 4019.56ms, mfu 34.25% lr 2.00e-04
+iter 4640: loss 3.5405, time 4021.91ms, mfu 34.17% lr 2.00e-04
+iter 4650: loss 3.3091, time 4018.82ms, mfu 34.11% lr 2.00e-04
+iter 4660: loss 3.3850, time 4021.50ms, mfu 34.05% lr 2.00e-04
+iter 4670: loss 3.4794, time 4016.42ms, mfu 34.00% lr 2.00e-04
+iter 4680: loss 3.5634, time 4021.22ms, mfu 33.95% lr 2.00e-04
+iter 4690: loss 3.5289, time 4011.45ms, mfu 33.91% lr 2.00e-04
+iter 4700: loss 3.5431, time 4011.47ms, mfu 33.88% lr 2.00e-04
+iter 4710: loss 3.4267, time 4021.56ms, mfu 33.84% lr 2.00e-04
+iter 4720: loss 3.4977, time 4020.18ms, mfu 33.81% lr 2.00e-04
+iter 4730: loss 3.2965, time 4009.24ms, mfu 33.79% lr 2.00e-04
+iter 4740: loss 3.5698, time 4012.24ms, mfu 33.77% lr 2.00e-04
+iter 4750: loss 3.5334, time 4009.20ms, mfu 33.76% lr 2.00e-04
+iter 4760: loss 3.4965, time 4017.49ms, mfu 33.73% lr 2.00e-04
+iter 4770: loss 3.5645, time 4006.97ms, mfu 33.72% lr 2.00e-04
+iter 4780: loss 3.4645, time 4027.09ms, mfu 33.70% lr 2.00e-04
+iter 4790: loss 3.3821, time 4018.59ms, mfu 33.68% lr 2.00e-04
+iter 4800: loss 3.7414, time 4018.07ms, mfu 33.67% lr 2.00e-04
+iter 4810: loss 3.2641, time 4020.26ms, mfu 33.65% lr 2.00e-04
+iter 4820: loss 3.5401, time 4027.29ms, mfu 33.63% lr 2.00e-04
+iter 4830: loss 3.5381, time 4014.00ms, mfu 33.63% lr 2.00e-04
+iter 4840: loss 3.5966, time 4016.02ms, mfu 33.62% lr 2.00e-04
+iter 4850: loss 3.3095, time 4019.11ms, mfu 33.61% lr 2.00e-04
+iter 4860: loss 3.4611, time 4017.73ms, mfu 33.60% lr 2.00e-04
+iter 4870: loss 3.5213, time 4026.09ms, mfu 33.59% lr 2.00e-04
+iter 4880: loss 3.3743, time 4022.45ms, mfu 33.58% lr 2.00e-04
+iter 4890: loss 3.4912, time 4031.98ms, mfu 33.57% lr 2.00e-04
+iter 4900: loss 3.1780, time 4016.82ms, mfu 33.56% lr 2.00e-04
+iter 4910: loss 3.5952, time 4016.99ms, mfu 33.56% lr 2.00e-04
+iter 4920: loss 3.3690, time 4018.80ms, mfu 33.56% lr 2.00e-04
+iter 4930: loss 3.4300, time 4017.57ms, mfu 33.56% lr 2.00e-04
+iter 4940: loss 3.5506, time 4021.71ms, mfu 33.55% lr 2.00e-04
+iter 4950: loss 3.5069, time 4019.29ms, mfu 33.55% lr 2.00e-04
+iter 4960: loss 3.4574, time 4012.48ms, mfu 33.55% lr 2.00e-04
+iter 4970: loss 3.4634, time 4016.21ms, mfu 33.55% lr 2.00e-04
+iter 4980: loss 3.5147, time 4053.82ms, mfu 33.52% lr 2.00e-04
+iter 4990: loss 3.5463, time 4011.78ms, mfu 33.53% lr 2.00e-04
+
+--- Evaluating at Step 5000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:08, 53.34it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.07% (2618/10042)
+--- Finished HellaSwag Evaluation ---
+step 5000: train loss 3.4736, val loss 3.4804, HellaSwag Acc: 0.2607
+------------------------------------
+New best validation loss: 3.4804
+saving checkpoint to out/ckpt.pt
+iter 5000: loss 3.2152, time 206341.85ms, mfu 30.24% lr 2.00e-04
+iter 5010: loss 3.5040, time 4643.97ms, mfu 30.12% lr 2.00e-04
+iter 5020: loss 3.3955, time 4707.58ms, mfu 29.97% lr 2.00e-04
+iter 5030: loss 3.5641, time 4755.40ms, mfu 29.81% lr 2.00e-04
+iter 5040: loss 3.5225, time 4809.95ms, mfu 29.63% lr 2.00e-04
+iter 5050: loss 3.5103, time 4810.19ms, mfu 29.47% lr 2.00e-04
+iter 5060: loss 3.4673, time 4800.97ms, mfu 29.33% lr 2.00e-04
+iter 5070: loss 3.3930, time 4378.88ms, mfu 29.47% lr 2.00e-04
+iter 5080: loss 3.7958, time 4022.36ms, mfu 29.87% lr 2.00e-04
+iter 5090: loss 3.4761, time 4029.29ms, mfu 30.23% lr 2.00e-04
+iter 5100: loss 3.5112, time 4024.40ms, mfu 30.56% lr 2.00e-04
+iter 5110: loss 3.5493, time 4017.44ms, mfu 30.86% lr 2.00e-04
+iter 5120: loss 3.5847, time 4018.49ms, mfu 31.12% lr 2.00e-04
+iter 5130: loss 3.3608, time 4014.58ms, mfu 31.37% lr 2.00e-04
+iter 5140: loss 3.3290, time 4019.31ms, mfu 31.58% lr 2.00e-04
+iter 5150: loss 3.5783, time 4018.56ms, mfu 31.78% lr 2.00e-04
+iter 5160: loss 3.3505, time 4009.90ms, mfu 31.96% lr 2.00e-04
+iter 5170: loss 3.3445, time 4016.09ms, mfu 32.12% lr 2.00e-04
+iter 5180: loss 3.5123, time 4029.35ms, mfu 32.25% lr 2.00e-04
+iter 5190: loss 3.2748, time 4009.45ms, mfu 32.39% lr 2.00e-04
+iter 5200: loss 3.3555, time 4023.63ms, mfu 32.50% lr 2.00e-04
+iter 5210: loss 3.5463, time 4020.60ms, mfu 32.60% lr 2.00e-04
+iter 5220: loss 3.5320, time 4024.51ms, mfu 32.69% lr 2.00e-04
+iter 5230: loss 3.2725, time 4024.16ms, mfu 32.77% lr 2.00e-04
+iter 5240: loss 3.3865, time 4019.50ms, mfu 32.84% lr 2.00e-04
+iter 5250: loss 3.4877, time 4024.24ms, mfu 32.91% lr 2.00e-04
+iter 5260: loss 3.4036, time 4021.05ms, mfu 32.97% lr 2.00e-04
+iter 5270: loss 3.4528, time 4017.89ms, mfu 33.03% lr 2.00e-04
+iter 5280: loss 3.5487, time 3809.03ms, mfu 33.26% lr 2.00e-04
+iter 5290: loss 3.4652, time 2303.70ms, mfu 35.78% lr 2.00e-04
+iter 5300: loss 3.6209, time 2297.20ms, mfu 38.07% lr 2.00e-04
+iter 5310: loss 3.4508, time 2381.70ms, mfu 39.92% lr 2.00e-04
+iter 5320: loss 3.4201, time 2378.96ms, mfu 41.60% lr 2.00e-04
+iter 5330: loss 3.1722, time 2380.39ms, mfu 43.10% lr 2.00e-04
+iter 5340: loss 3.3896, time 2386.50ms, mfu 44.43% lr 2.00e-04
+iter 5350: loss 3.5499, time 2384.05ms, mfu 45.64% lr 2.00e-04
+iter 5360: loss 3.2781, time 4017.18ms, mfu 44.43% lr 2.00e-04
+iter 5370: loss 3.4825, time 4023.04ms, mfu 43.34% lr 2.00e-04
+iter 5380: loss 3.4493, time 4017.24ms, mfu 42.36% lr 2.00e-04
+iter 5390: loss 3.4047, time 4029.58ms, mfu 41.47% lr 2.00e-04
+iter 5400: loss 3.5272, time 4014.87ms, mfu 40.68% lr 2.00e-04
+iter 5410: loss 3.3974, time 4028.55ms, mfu 39.95% lr 2.00e-04
+iter 5420: loss 3.2546, time 4018.26ms, mfu 39.31% lr 2.00e-04
+iter 5430: loss 3.5258, time 4023.64ms, mfu 38.73% lr 2.00e-04
+iter 5440: loss 3.7371, time 4018.98ms, mfu 38.21% lr 2.00e-04
+iter 5450: loss 3.4672, time 4022.39ms, mfu 37.74% lr 2.00e-04
+iter 5460: loss 3.4598, time 4017.89ms, mfu 37.32% lr 2.00e-04
+iter 5470: loss 3.6478, time 4026.06ms, mfu 36.93% lr 2.00e-04
+iter 5480: loss 3.2746, time 4018.06ms, mfu 36.59% lr 2.00e-04
+iter 5490: loss 3.4665, time 4015.17ms, mfu 36.29% lr 2.00e-04
+iter 5500: loss 3.3789, time 4011.54ms, mfu 36.02% lr 2.00e-04
+iter 5510: loss 3.2886, time 4013.32ms, mfu 35.78% lr 2.00e-04
+iter 5520: loss 3.2775, time 4014.83ms, mfu 35.56% lr 2.00e-04
+iter 5530: loss 3.6285, time 4018.67ms, mfu 35.35% lr 2.00e-04
+iter 5540: loss 3.2507, time 4014.54ms, mfu 35.17% lr 2.00e-04
+iter 5550: loss 3.5197, time 4020.84ms, mfu 35.01% lr 2.00e-04
+iter 5560: loss 3.5504, time 4019.83ms, mfu 34.86% lr 2.00e-04
+iter 5570: loss 3.5622, time 4028.84ms, mfu 34.72% lr 2.00e-04
+iter 5580: loss 3.3538, time 4029.78ms, mfu 34.59% lr 2.00e-04
+iter 5590: loss 3.2975, time 4027.44ms, mfu 34.48% lr 2.00e-04
+iter 5600: loss 3.7185, time 4010.29ms, mfu 34.39% lr 2.00e-04
+iter 5610: loss 3.5739, time 4023.01ms, mfu 34.30% lr 2.00e-04
+iter 5620: loss 3.5041, time 4015.58ms, mfu 34.23% lr 2.00e-04
+iter 5630: loss 3.5603, time 4013.21ms, mfu 34.16% lr 2.00e-04
+iter 5640: loss 3.7382, time 4019.74ms, mfu 34.10% lr 2.00e-04
+iter 5650: loss 3.5473, time 4028.27ms, mfu 34.03% lr 2.00e-04
+iter 5660: loss 3.5058, time 4019.53ms, mfu 33.98% lr 2.00e-04
+iter 5670: loss 3.5209, time 4022.59ms, mfu 33.93% lr 2.00e-04
+iter 5680: loss 3.4920, time 4024.31ms, mfu 33.89% lr 2.00e-04
+iter 5690: loss 3.2229, time 4020.96ms, mfu 33.85% lr 2.00e-04
+iter 5700: loss 3.5017, time 4026.17ms, mfu 33.81% lr 2.00e-04
+iter 5710: loss 3.6345, time 4021.62ms, mfu 33.78% lr 2.00e-04
+iter 5720: loss 3.5980, time 4013.72ms, mfu 33.76% lr 2.00e-04
+iter 5730: loss 3.4952, time 4009.98ms, mfu 33.75% lr 2.00e-04
+iter 5740: loss 3.3770, time 4016.40ms, mfu 33.73% lr 2.00e-04
+iter 5750: loss 3.4410, time 4022.31ms, mfu 33.70% lr 2.00e-04
+iter 5760: loss 3.3468, time 4012.36ms, mfu 33.69% lr 2.00e-04
+iter 5770: loss 3.3408, time 4016.71ms, mfu 33.68% lr 2.00e-04
+iter 5780: loss 3.1084, time 4016.37ms, mfu 33.67% lr 2.00e-04
+iter 5790: loss 3.5904, time 4026.74ms, mfu 33.65% lr 2.00e-04
+iter 5800: loss 3.3710, time 4016.27ms, mfu 33.64% lr 2.00e-04
+iter 5810: loss 3.3145, time 4023.39ms, mfu 33.62% lr 2.00e-04
+iter 5820: loss 3.4690, time 4024.46ms, mfu 33.61% lr 2.00e-04
+iter 5830: loss 3.4026, time 4025.45ms, mfu 33.59% lr 2.00e-04
+iter 5840: loss 3.2155, time 4017.63ms, mfu 33.59% lr 2.00e-04
+iter 5850: loss 3.3781, time 4019.43ms, mfu 33.58% lr 2.00e-04
+iter 5860: loss 3.3682, time 4021.11ms, mfu 33.58% lr 2.00e-04
+iter 5870: loss 3.3130, time 4018.25ms, mfu 33.57% lr 2.00e-04
+iter 5880: loss 3.5356, time 4011.12ms, mfu 33.57% lr 2.00e-04
+iter 5890: loss 3.4530, time 4021.78ms, mfu 33.57% lr 2.00e-04
+iter 5900: loss 3.3403, time 4023.67ms, mfu 33.56% lr 2.00e-04
+iter 5910: loss 3.4259, time 4014.46ms, mfu 33.56% lr 2.00e-04
+iter 5920: loss 3.3354, time 4013.13ms, mfu 33.56% lr 2.00e-04
+iter 5930: loss 3.4543, time 4018.83ms, mfu 33.56% lr 2.00e-04
+iter 5940: loss 3.4463, time 4017.63ms, mfu 33.56% lr 2.00e-04
+iter 5950: loss 3.4528, time 4022.77ms, mfu 33.55% lr 2.00e-04
+iter 5960: loss 3.4426, time 4019.49ms, mfu 33.55% lr 2.00e-04
+iter 5970: loss 3.3906, time 4022.48ms, mfu 33.54% lr 2.00e-04
+iter 5980: loss 3.4448, time 4024.41ms, mfu 33.54% lr 2.00e-04
+iter 5990: loss 3.4076, time 4023.67ms, mfu 33.53% lr 2.00e-04
+
+--- Evaluating at Step 6000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:57, 56.59it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 25.95% (2606/10042)
+--- Finished HellaSwag Evaluation ---
+step 6000: train loss 3.4418, val loss 3.4435, HellaSwag Acc: 0.2595
+------------------------------------
+New best validation loss: 3.4435
+saving checkpoint to out/ckpt.pt
+iter 6000: loss 3.5096, time 195246.60ms, mfu 30.25% lr 2.00e-04
+iter 6010: loss 3.3716, time 4021.20ms, mfu 30.58% lr 2.00e-04
+iter 6020: loss 3.3880, time 4018.85ms, mfu 30.87% lr 2.00e-04
+iter 6030: loss 3.1524, time 4015.86ms, mfu 31.14% lr 2.00e-04
+iter 6040: loss 3.4309, time 4019.38ms, mfu 31.38% lr 2.00e-04
+iter 6050: loss 3.4483, time 4011.99ms, mfu 31.60% lr 2.00e-04
+iter 6060: loss 3.5320, time 4017.05ms, mfu 31.79% lr 2.00e-04
+iter 6070: loss 3.5171, time 4009.80ms, mfu 31.98% lr 2.00e-04
+iter 6080: loss 3.4228, time 4020.72ms, mfu 32.13% lr 2.00e-04
+iter 6090: loss 3.3952, time 4017.07ms, mfu 32.27% lr 2.00e-04
+iter 6100: loss 3.4987, time 4015.44ms, mfu 32.40% lr 2.00e-04
+iter 6110: loss 3.4527, time 4015.77ms, mfu 32.52% lr 2.00e-04
+iter 6120: loss 3.4496, time 4025.76ms, mfu 32.61% lr 2.00e-04
+iter 6130: loss 3.4341, time 4029.32ms, mfu 32.69% lr 2.00e-04
+iter 6140: loss 3.2922, time 4014.27ms, mfu 32.78% lr 2.00e-04
+iter 6150: loss 3.3267, time 4028.43ms, mfu 32.85% lr 2.00e-04
+iter 6160: loss 3.4032, time 4017.78ms, mfu 32.92% lr 2.00e-04
+iter 6170: loss 3.5360, time 4011.26ms, mfu 32.99% lr 2.00e-04
+iter 6180: loss 3.3316, time 4013.80ms, mfu 33.04% lr 2.00e-04
+iter 6190: loss 3.5210, time 4019.46ms, mfu 33.09% lr 2.00e-04
+iter 6200: loss 3.3806, time 4015.07ms, mfu 33.14% lr 2.00e-04
+iter 6210: loss 3.0660, time 4016.29ms, mfu 33.18% lr 2.00e-04
+iter 6220: loss 3.5133, time 4015.10ms, mfu 33.22% lr 2.00e-04
+iter 6230: loss 3.4586, time 4018.15ms, mfu 33.25% lr 2.00e-04
+iter 6240: loss 3.4052, time 4013.62ms, mfu 33.28% lr 2.00e-04
+iter 6250: loss 3.4099, time 4023.15ms, mfu 33.30% lr 2.00e-04
+iter 6260: loss 3.5238, time 4014.70ms, mfu 33.33% lr 2.00e-04
+iter 6270: loss 3.3609, time 3899.32ms, mfu 33.45% lr 2.00e-04
+iter 6280: loss 3.4933, time 2298.44ms, mfu 35.97% lr 2.00e-04
+iter 6290: loss 3.4175, time 2293.18ms, mfu 38.25% lr 2.00e-04
+iter 6300: loss 3.6189, time 2366.58ms, mfu 40.12% lr 2.00e-04
+iter 6310: loss 3.3240, time 2375.00ms, mfu 41.78% lr 2.00e-04
+iter 6320: loss 3.3185, time 2374.05ms, mfu 43.28% lr 2.00e-04
+iter 6330: loss 3.5906, time 2367.40ms, mfu 44.64% lr 2.00e-04
+iter 6340: loss 3.2898, time 2371.39ms, mfu 45.86% lr 2.00e-04
+iter 6350: loss 3.1934, time 3169.88ms, mfu 45.53% lr 2.00e-04
+iter 6360: loss 3.2124, time 4003.84ms, mfu 44.34% lr 2.00e-04
+iter 6370: loss 3.4580, time 4029.79ms, mfu 43.25% lr 2.00e-04
+iter 6380: loss 3.2394, time 4016.31ms, mfu 42.28% lr 2.00e-04
+iter 6390: loss 3.5727, time 4027.45ms, mfu 41.40% lr 2.00e-04
+iter 6400: loss 3.4468, time 4016.66ms, mfu 40.61% lr 2.00e-04
+iter 6410: loss 3.0932, time 4014.60ms, mfu 39.91% lr 2.00e-04
+iter 6420: loss 3.4544, time 4014.40ms, mfu 39.27% lr 2.00e-04
+iter 6430: loss 3.5742, time 4024.11ms, mfu 38.70% lr 2.00e-04
+iter 6440: loss 3.6095, time 4004.65ms, mfu 38.19% lr 2.00e-04
+iter 6450: loss 3.2433, time 4014.89ms, mfu 37.73% lr 2.00e-04
+iter 6460: loss 3.5386, time 4013.16ms, mfu 37.31% lr 2.00e-04
+iter 6470: loss 3.3960, time 4019.84ms, mfu 36.93% lr 2.00e-04
+iter 6480: loss 3.3515, time 4015.73ms, mfu 36.60% lr 2.00e-04
+iter 6490: loss 3.3814, time 4022.21ms, mfu 36.29% lr 2.00e-04
+iter 6500: loss 3.4417, time 4018.20ms, mfu 36.01% lr 2.00e-04
+iter 6510: loss 3.3916, time 4025.16ms, mfu 35.76% lr 2.00e-04
+iter 6520: loss 3.5149, time 4014.93ms, mfu 35.54% lr 2.00e-04
+iter 6530: loss 3.4317, time 4008.24ms, mfu 35.35% lr 2.00e-04
+iter 6540: loss 3.3550, time 4016.02ms, mfu 35.17% lr 2.00e-04
+iter 6550: loss 3.5659, time 4017.35ms, mfu 35.01% lr 2.00e-04
+iter 6560: loss 3.4553, time 4031.75ms, mfu 34.85% lr 2.00e-04
+iter 6570: loss 3.6529, time 4013.77ms, mfu 34.72% lr 2.00e-04
+iter 6580: loss 3.4928, time 4016.52ms, mfu 34.60% lr 2.00e-04
+iter 6590: loss 3.4244, time 4021.84ms, mfu 34.49% lr 2.00e-04
+iter 6600: loss 3.3354, time 4026.49ms, mfu 34.39% lr 2.00e-04
+iter 6610: loss 3.5537, time 4010.17ms, mfu 34.31% lr 2.00e-04
+iter 6620: loss 3.3962, time 4025.75ms, mfu 34.23% lr 2.00e-04
+iter 6630: loss 3.3762, time 4019.34ms, mfu 34.16% lr 2.00e-04
+iter 6640: loss 3.4385, time 4027.18ms, mfu 34.09% lr 2.00e-04
+iter 6650: loss 3.6005, time 4015.47ms, mfu 34.04% lr 2.00e-04
+iter 6660: loss 3.4967, time 4016.00ms, mfu 33.99% lr 2.00e-04
+iter 6670: loss 3.3376, time 4021.35ms, mfu 33.94% lr 2.00e-04
+iter 6680: loss 3.3395, time 4008.20ms, mfu 33.91% lr 2.00e-04
+iter 6690: loss 3.3705, time 4012.57ms, mfu 33.88% lr 2.00e-04
+iter 6700: loss 3.6011, time 4023.77ms, mfu 33.84% lr 2.00e-04
+iter 6710: loss 3.4571, time 4024.26ms, mfu 33.80% lr 2.00e-04
+iter 6720: loss 3.4115, time 4016.56ms, mfu 33.78% lr 2.00e-04
+iter 6730: loss 3.2925, time 4019.30ms, mfu 33.75% lr 2.00e-04
+iter 6740: loss 3.2352, time 4011.75ms, mfu 33.74% lr 2.00e-04
+iter 6750: loss 3.2490, time 4014.34ms, mfu 33.72% lr 2.00e-04
+iter 6760: loss 3.2912, time 4028.48ms, mfu 33.69% lr 2.00e-04
+iter 6770: loss 3.5736, time 4017.29ms, mfu 33.68% lr 2.00e-04
+iter 6780: loss 3.5077, time 4016.78ms, mfu 33.66% lr 2.00e-04
+iter 6790: loss 3.6062, time 4021.54ms, mfu 33.65% lr 2.00e-04
+iter 6800: loss 3.5625, time 4013.46ms, mfu 33.64% lr 2.00e-04
+iter 6810: loss 3.2301, time 4022.69ms, mfu 33.63% lr 2.00e-04
+iter 6820: loss 3.4882, time 4018.88ms, mfu 33.62% lr 2.00e-04
+iter 6830: loss 3.2329, time 4013.80ms, mfu 33.61% lr 2.00e-04
+iter 6840: loss 3.1988, time 4022.31ms, mfu 33.60% lr 2.00e-04
+iter 6850: loss 3.3031, time 4019.79ms, mfu 33.59% lr 2.00e-04
+iter 6860: loss 3.2196, time 4014.71ms, mfu 33.59% lr 2.00e-04
+iter 6870: loss 3.2675, time 4018.72ms, mfu 33.59% lr 2.00e-04
+iter 6880: loss 3.5637, time 4026.73ms, mfu 33.57% lr 2.00e-04
+iter 6890: loss 3.1770, time 4013.66ms, mfu 33.57% lr 2.00e-04
+iter 6900: loss 3.2992, time 4013.16ms, mfu 33.57% lr 2.00e-04
+iter 6910: loss 3.4193, time 4024.55ms, mfu 33.56% lr 2.00e-04
+iter 6920: loss 3.5290, time 4019.45ms, mfu 33.56% lr 2.00e-04
+iter 6930: loss 3.3854, time 4012.94ms, mfu 33.56% lr 2.00e-04
+iter 6940: loss 3.4507, time 4033.97ms, mfu 33.55% lr 2.00e-04
+iter 6950: loss 3.3627, time 4017.35ms, mfu 33.55% lr 2.00e-04
+iter 6960: loss 3.4265, time 4015.77ms, mfu 33.55% lr 2.00e-04
+iter 6970: loss 3.3834, time 4007.54ms, mfu 33.56% lr 2.00e-04
+iter 6980: loss 3.3668, time 4020.12ms, mfu 33.55% lr 2.00e-04
+iter 6990: loss 3.5162, time 4024.25ms, mfu 33.55% lr 2.00e-04
+
+--- Evaluating at Step 7000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:01, 55.29it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 25.88% (2599/10042)
+--- Finished HellaSwag Evaluation ---
+step 7000: train loss 3.4250, val loss 3.4089, HellaSwag Acc: 0.2588
+------------------------------------
+New best validation loss: 3.4089
+saving checkpoint to out/ckpt.pt
+iter 7000: loss 3.3740, time 199422.84ms, mfu 30.26% lr 2.00e-04
+iter 7010: loss 3.3917, time 4003.77ms, mfu 30.60% lr 2.00e-04
+iter 7020: loss 3.5113, time 4031.65ms, mfu 30.88% lr 2.00e-04
+iter 7030: loss 3.3795, time 4008.11ms, mfu 31.15% lr 2.00e-04
+iter 7040: loss 3.3564, time 4013.58ms, mfu 31.40% lr 2.00e-04
+iter 7050: loss 3.3039, time 4016.94ms, mfu 31.61% lr 2.00e-04
+iter 7060: loss 3.3153, time 4022.27ms, mfu 31.80% lr 2.00e-04
+iter 7070: loss 3.3918, time 4013.00ms, mfu 31.98% lr 2.00e-04
+iter 7080: loss 3.3276, time 4014.02ms, mfu 32.14% lr 2.00e-04
+iter 7090: loss 3.1019, time 4012.47ms, mfu 32.28% lr 2.00e-04
+iter 7100: loss 3.5195, time 4024.65ms, mfu 32.40% lr 2.00e-04
+iter 7110: loss 3.3781, time 4022.23ms, mfu 32.51% lr 2.00e-04
+iter 7120: loss 3.3296, time 4019.06ms, mfu 32.61% lr 2.00e-04
+iter 7130: loss 3.2035, time 4020.77ms, mfu 32.70% lr 2.00e-04
+iter 7140: loss 3.3519, time 4025.70ms, mfu 32.78% lr 2.00e-04
+iter 7150: loss 3.4258, time 4011.62ms, mfu 32.86% lr 2.00e-04
+iter 7160: loss 3.2812, time 4012.64ms, mfu 32.93% lr 2.00e-04
+iter 7170: loss 3.3865, time 4008.80ms, mfu 33.00% lr 2.00e-04
+iter 7180: loss 3.3433, time 4024.40ms, mfu 33.05% lr 2.00e-04
+iter 7190: loss 3.4705, time 4024.37ms, mfu 33.09% lr 2.00e-04
+iter 7200: loss 3.5171, time 4021.78ms, mfu 33.14% lr 2.00e-04
+iter 7210: loss 3.2106, time 4028.28ms, mfu 33.17% lr 2.00e-04
+iter 7220: loss 3.2551, time 4017.90ms, mfu 33.20% lr 2.00e-04
+iter 7230: loss 3.4109, time 4017.58ms, mfu 33.24% lr 2.00e-04
+iter 7240: loss 3.4290, time 4019.81ms, mfu 33.27% lr 2.00e-04
+iter 7250: loss 3.2938, time 4024.58ms, mfu 33.29% lr 2.00e-04
+iter 7260: loss 3.3003, time 3958.69ms, mfu 33.36% lr 2.00e-04
+iter 7270: loss 3.3978, time 2297.24ms, mfu 35.89% lr 2.00e-04
+iter 7280: loss 3.2700, time 2297.80ms, mfu 38.17% lr 2.00e-04
+iter 7290: loss 3.3217, time 2377.83ms, mfu 40.02% lr 2.00e-04
+iter 7300: loss 3.3485, time 2382.91ms, mfu 41.67% lr 2.00e-04
+iter 7310: loss 3.4452, time 2377.70ms, mfu 43.17% lr 2.00e-04
+iter 7320: loss 3.2583, time 2382.77ms, mfu 44.51% lr 2.00e-04
+iter 7330: loss 3.4909, time 2380.19ms, mfu 45.72% lr 2.00e-04
+iter 7340: loss 3.3855, time 4023.97ms, mfu 44.50% lr 2.00e-04
+iter 7350: loss 3.2773, time 4023.57ms, mfu 43.40% lr 2.00e-04
+iter 7360: loss 3.4474, time 4021.84ms, mfu 42.41% lr 2.00e-04
+iter 7370: loss 3.5202, time 4014.56ms, mfu 41.52% lr 2.00e-04
+iter 7380: loss 3.4179, time 4023.06ms, mfu 40.72% lr 2.00e-04
+iter 7390: loss 3.2533, time 4019.32ms, mfu 40.00% lr 2.00e-04
+iter 7400: loss 3.2752, time 4015.70ms, mfu 39.36% lr 2.00e-04
+iter 7410: loss 3.6045, time 4017.07ms, mfu 38.78% lr 2.00e-04
+iter 7420: loss 3.4132, time 4010.91ms, mfu 38.26% lr 2.00e-04
+iter 7430: loss 3.4121, time 4030.71ms, mfu 37.78% lr 2.00e-04
+iter 7440: loss 3.3872, time 4021.59ms, mfu 37.35% lr 2.00e-04
+iter 7450: loss 3.3918, time 4025.76ms, mfu 36.96% lr 2.00e-04
+iter 7460: loss 3.5509, time 4009.57ms, mfu 36.63% lr 2.00e-04
+iter 7470: loss 3.2481, time 4013.96ms, mfu 36.32% lr 2.00e-04
+iter 7480: loss 3.2831, time 4034.78ms, mfu 36.03% lr 2.00e-04
+iter 7490: loss 3.3653, time 4007.94ms, mfu 35.79% lr 2.00e-04
+iter 7500: loss 3.5773, time 4022.99ms, mfu 35.56% lr 2.00e-04
+iter 7510: loss 3.6092, time 3999.22ms, mfu 35.37% lr 2.00e-04
+iter 7520: loss 3.5779, time 4012.28ms, mfu 35.19% lr 2.00e-04
+iter 7530: loss 3.3588, time 4019.08ms, mfu 35.03% lr 2.00e-04
+iter 7540: loss 3.3296, time 4012.84ms, mfu 34.88% lr 2.00e-04
+iter 7550: loss 3.3627, time 4025.19ms, mfu 34.74% lr 2.00e-04
+iter 7560: loss 3.5996, time 4018.24ms, mfu 34.62% lr 2.00e-04
+iter 7570: loss 3.5161, time 4017.10ms, mfu 34.51% lr 2.00e-04
+iter 7580: loss 3.4280, time 4014.97ms, mfu 34.42% lr 2.00e-04
+iter 7590: loss 3.2922, time 4015.88ms, mfu 34.33% lr 2.00e-04
+iter 7600: loss 3.2848, time 4020.02ms, mfu 34.25% lr 2.00e-04
+iter 7610: loss 3.2621, time 4019.71ms, mfu 34.18% lr 2.00e-04
+iter 7620: loss 3.3558, time 4023.12ms, mfu 34.11% lr 2.00e-04
+iter 7630: loss 3.3635, time 4018.44ms, mfu 34.05% lr 2.00e-04
+iter 7640: loss 3.3089, time 4019.59ms, mfu 34.00% lr 2.00e-04
+iter 7650: loss 3.3715, time 4019.30ms, mfu 33.95% lr 2.00e-04
+iter 7660: loss 3.4504, time 4008.46ms, mfu 33.92% lr 2.00e-04
+iter 7670: loss 3.4376, time 4021.02ms, mfu 33.88% lr 2.00e-04
+iter 7680: loss 3.4616, time 4016.58ms, mfu 33.85% lr 2.00e-04
+iter 7690: loss 3.3896, time 4011.25ms, mfu 33.82% lr 2.00e-04
+iter 7700: loss 3.3113, time 4017.34ms, mfu 33.79% lr 2.00e-04
+iter 7710: loss 3.1671, time 4018.79ms, mfu 33.77% lr 2.00e-04
+iter 7720: loss 3.3687, time 4018.63ms, mfu 33.74% lr 2.00e-04
+iter 7730: loss 3.2708, time 4022.32ms, mfu 33.72% lr 2.00e-04
+iter 7740: loss 3.3304, time 4024.15ms, mfu 33.70% lr 2.00e-04
+iter 7750: loss 3.5575, time 4021.46ms, mfu 33.68% lr 2.00e-04
+iter 7760: loss 3.5025, time 4020.78ms, mfu 33.66% lr 2.00e-04
+iter 7770: loss 3.3223, time 4019.67ms, mfu 33.65% lr 2.00e-04
+iter 7780: loss 3.3338, time 4015.49ms, mfu 33.64% lr 2.00e-04
+iter 7790: loss 3.7552, time 4016.69ms, mfu 33.63% lr 2.00e-04
+iter 7800: loss 3.2350, time 4015.76ms, mfu 33.62% lr 2.00e-04
+iter 7810: loss 3.2809, time 4014.78ms, mfu 33.62% lr 2.00e-04
+iter 7820: loss 3.3113, time 4030.78ms, mfu 33.60% lr 2.00e-04
+iter 7830: loss 3.4618, time 4023.27ms, mfu 33.59% lr 2.00e-04
+iter 7840: loss 3.3905, time 4026.32ms, mfu 33.58% lr 2.00e-04
+iter 7850: loss 3.3495, time 4020.96ms, mfu 33.57% lr 2.00e-04
+iter 7860: loss 3.3715, time 4027.01ms, mfu 33.56% lr 2.00e-04
+iter 7870: loss 3.3474, time 4021.13ms, mfu 33.55% lr 2.00e-04
+iter 7880: loss 3.3207, time 4009.95ms, mfu 33.56% lr 2.00e-04
+iter 7890: loss 3.2812, time 4012.40ms, mfu 33.56% lr 2.00e-04
+iter 7900: loss 3.2952, time 4028.63ms, mfu 33.55% lr 2.00e-04
+iter 7910: loss 3.5857, time 4020.26ms, mfu 33.55% lr 2.00e-04
+iter 7920: loss 3.3178, time 4019.80ms, mfu 33.55% lr 2.00e-04
+iter 7930: loss 3.4303, time 4021.06ms, mfu 33.54% lr 2.00e-04
+iter 7940: loss 3.3872, time 4018.35ms, mfu 33.54% lr 2.00e-04
+iter 7950: loss 3.4726, time 4009.96ms, mfu 33.55% lr 2.00e-04
+iter 7960: loss 3.3203, time 4023.84ms, mfu 33.54% lr 2.00e-04
+iter 7970: loss 3.2333, time 4013.28ms, mfu 33.55% lr 2.00e-04
+iter 7980: loss 3.3896, time 4008.06ms, mfu 33.55% lr 2.00e-04
+iter 7990: loss 3.5759, time 4014.98ms, mfu 33.55% lr 2.00e-04
+
+--- Evaluating at Step 8000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:01, 55.24it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.10% (2621/10042)
+--- Finished HellaSwag Evaluation ---
+step 8000: train loss 3.3579, val loss 3.3644, HellaSwag Acc: 0.2610
+------------------------------------
+New best validation loss: 3.3644
+saving checkpoint to out/ckpt.pt
+iter 8000: loss 3.3805, time 199552.05ms, mfu 30.27% lr 2.00e-04
+iter 8010: loss 3.1345, time 4017.80ms, mfu 30.59% lr 2.00e-04
+iter 8020: loss 3.4199, time 4010.02ms, mfu 30.89% lr 2.00e-04
+iter 8030: loss 3.2632, time 4018.10ms, mfu 31.16% lr 2.00e-04
+iter 8040: loss 3.4600, time 4025.38ms, mfu 31.39% lr 2.00e-04
+iter 8050: loss 3.4894, time 4013.38ms, mfu 31.61% lr 2.00e-04
+iter 8060: loss 3.0970, time 4026.71ms, mfu 31.79% lr 2.00e-04
+iter 8070: loss 3.3445, time 4010.31ms, mfu 31.98% lr 2.00e-04
+iter 8080: loss 3.2490, time 4020.53ms, mfu 32.13% lr 2.00e-04
+iter 8090: loss 3.3342, time 4021.43ms, mfu 32.27% lr 2.00e-04
+iter 8100: loss 3.3199, time 4018.75ms, mfu 32.39% lr 2.00e-04
+iter 8110: loss 3.2400, time 4018.23ms, mfu 32.51% lr 2.00e-04
+iter 8120: loss 3.4157, time 4013.32ms, mfu 32.62% lr 2.00e-04
+iter 8130: loss 3.3126, time 4028.35ms, mfu 32.70% lr 2.00e-04
+iter 8140: loss 3.4148, time 4019.08ms, mfu 32.78% lr 2.00e-04
+iter 8150: loss 3.4024, time 4015.86ms, mfu 32.86% lr 2.00e-04
+iter 8160: loss 3.3188, time 4024.33ms, mfu 32.92% lr 2.00e-04
+iter 8170: loss 3.3724, time 4022.27ms, mfu 32.98% lr 2.00e-04
+iter 8180: loss 3.1412, time 4009.92ms, mfu 33.04% lr 2.00e-04
+iter 8190: loss 3.5190, time 4025.00ms, mfu 33.09% lr 2.00e-04
+iter 8200: loss 3.2889, time 4031.48ms, mfu 33.12% lr 2.00e-04
+iter 8210: loss 3.3742, time 4015.80ms, mfu 33.16% lr 2.00e-04
+iter 8220: loss 3.2895, time 4017.15ms, mfu 33.20% lr 2.00e-04
+iter 8230: loss 3.2233, time 4023.22ms, mfu 33.23% lr 2.00e-04
+iter 8240: loss 3.4329, time 4015.46ms, mfu 33.26% lr 2.00e-04
+iter 8250: loss 3.3258, time 3810.37ms, mfu 33.47% lr 2.00e-04
+iter 8260: loss 3.4371, time 2294.38ms, mfu 36.00% lr 2.00e-04
+iter 8270: loss 3.4372, time 2294.54ms, mfu 38.27% lr 2.00e-04
+iter 8280: loss 3.4217, time 2370.35ms, mfu 40.13% lr 2.00e-04
+iter 8290: loss 3.3536, time 2372.36ms, mfu 41.80% lr 2.00e-04
+iter 8300: loss 3.3120, time 2378.41ms, mfu 43.28% lr 2.00e-04
+iter 8310: loss 3.2163, time 2376.70ms, mfu 44.63% lr 2.00e-04
+iter 8320: loss 3.1343, time 2369.96ms, mfu 45.85% lr 2.00e-04
+iter 8330: loss 3.7759, time 2847.89ms, mfu 46.00% lr 2.00e-04
+iter 8340: loss 3.1520, time 4016.19ms, mfu 44.75% lr 2.00e-04
+iter 8350: loss 3.3747, time 4012.32ms, mfu 43.63% lr 2.00e-04
+iter 8360: loss 3.4036, time 4019.89ms, mfu 42.62% lr 2.00e-04
+iter 8370: loss 3.5311, time 4020.74ms, mfu 41.71% lr 2.00e-04
+iter 8380: loss 3.4367, time 4022.04ms, mfu 40.89% lr 2.00e-04
+iter 8390: loss 3.3634, time 4026.66ms, mfu 40.15% lr 2.00e-04
+iter 8400: loss 3.3110, time 4013.03ms, mfu 39.49% lr 2.00e-04
+iter 8410: loss 3.3711, time 4020.31ms, mfu 38.89% lr 2.00e-04
+iter 8420: loss 3.4266, time 4018.44ms, mfu 38.36% lr 2.00e-04
+iter 8430: loss 3.4040, time 4028.10ms, mfu 37.87% lr 2.00e-04
+iter 8440: loss 3.3792, time 4011.85ms, mfu 37.44% lr 2.00e-04
+iter 8450: loss 3.4378, time 4017.73ms, mfu 37.05% lr 2.00e-04
+iter 8460: loss 3.4736, time 4018.24ms, mfu 36.70% lr 2.00e-04
+iter 8470: loss 3.4222, time 4014.94ms, mfu 36.39% lr 2.00e-04
+iter 8480: loss 3.2807, time 4018.38ms, mfu 36.10% lr 2.00e-04
+iter 8490: loss 3.0017, time 4026.12ms, mfu 35.84% lr 2.00e-04
+iter 8500: loss 3.3369, time 4027.14ms, mfu 35.60% lr 2.00e-04
+iter 8510: loss 3.3509, time 4027.82ms, mfu 35.39% lr 2.00e-04
+iter 8520: loss 3.2411, time 4020.94ms, mfu 35.20% lr 2.00e-04
+iter 8530: loss 3.3214, time 4018.57ms, mfu 35.03% lr 2.00e-04
+iter 8540: loss 3.3632, time 4025.71ms, mfu 34.88% lr 2.00e-04
+iter 8550: loss 3.4541, time 4012.60ms, mfu 34.75% lr 2.00e-04
+iter 8560: loss 3.1355, time 4010.61ms, mfu 34.63% lr 2.00e-04
+iter 8570: loss 3.3439, time 4018.35ms, mfu 34.52% lr 2.00e-04
+iter 8580: loss 3.5115, time 4024.05ms, mfu 34.42% lr 2.00e-04
+iter 8590: loss 3.4063, time 4022.95ms, mfu 34.33% lr 2.00e-04
+iter 8600: loss 3.3022, time 4020.02ms, mfu 34.25% lr 2.00e-04
+iter 8610: loss 3.2701, time 4014.92ms, mfu 34.18% lr 2.00e-04
+iter 8620: loss 3.3360, time 4012.68ms, mfu 34.12% lr 2.00e-04
+iter 8630: loss 3.4354, time 4009.21ms, mfu 34.07% lr 2.00e-04
+iter 8640: loss 3.4859, time 4019.89ms, mfu 34.01% lr 2.00e-04
+iter 8650: loss 3.4910, time 4022.75ms, mfu 33.96% lr 2.00e-04
+iter 8660: loss 3.2957, time 4020.99ms, mfu 33.92% lr 2.00e-04
+iter 8670: loss 3.3281, time 4020.39ms, mfu 33.88% lr 2.00e-04
+iter 8680: loss 3.3648, time 4021.06ms, mfu 33.84% lr 2.00e-04
+iter 8690: loss 3.2208, time 4013.70ms, mfu 33.81% lr 2.00e-04
+iter 8700: loss 3.1524, time 4016.93ms, mfu 33.79% lr 2.00e-04
+iter 8710: loss 3.3309, time 4018.28ms, mfu 33.76% lr 2.00e-04
+iter 8720: loss 3.2871, time 4007.33ms, mfu 33.75% lr 2.00e-04
+iter 8730: loss 3.3206, time 4030.83ms, mfu 33.72% lr 2.00e-04
+iter 8740: loss 3.5477, time 4029.51ms, mfu 33.69% lr 2.00e-04
+iter 8750: loss 3.2721, time 4027.31ms, mfu 33.67% lr 2.00e-04
+iter 8760: loss 3.3639, time 4013.95ms, mfu 33.66% lr 2.00e-04
+iter 8770: loss 3.4371, time 4017.24ms, mfu 33.65% lr 2.00e-04
+iter 8780: loss 3.3262, time 4022.78ms, mfu 33.63% lr 2.00e-04
+iter 8790: loss 3.3547, time 4016.49ms, mfu 33.62% lr 2.00e-04
+iter 8800: loss 3.3382, time 4016.93ms, mfu 33.62% lr 2.00e-04
+iter 8810: loss 3.1439, time 4008.87ms, mfu 33.62% lr 2.00e-04
+iter 8820: loss 3.5272, time 4023.97ms, mfu 33.60% lr 2.00e-04
+iter 8830: loss 3.4901, time 4016.97ms, mfu 33.60% lr 2.00e-04
+iter 8840: loss 3.3642, time 4016.79ms, mfu 33.59% lr 2.00e-04
+iter 8850: loss 3.4275, time 4026.33ms, mfu 33.58% lr 2.00e-04
+iter 8860: loss 3.3920, time 4021.92ms, mfu 33.57% lr 2.00e-04
+iter 8870: loss 3.4291, time 4019.93ms, mfu 33.57% lr 2.00e-04
+iter 8880: loss 3.2260, time 4013.67ms, mfu 33.57% lr 2.00e-04
+iter 8890: loss 3.0238, time 4023.53ms, mfu 33.56% lr 2.00e-04
+iter 8900: loss 3.2704, time 4019.38ms, mfu 33.56% lr 2.00e-04
+iter 8910: loss 3.1251, time 4012.36ms, mfu 33.56% lr 2.00e-04
+iter 8920: loss 3.4122, time 4020.58ms, mfu 33.56% lr 2.00e-04
+iter 8930: loss 3.3023, time 4011.84ms, mfu 33.56% lr 2.00e-04
+iter 8940: loss 3.5740, time 4024.60ms, mfu 33.55% lr 2.00e-04
+iter 8950: loss 3.1923, time 4031.44ms, mfu 33.54% lr 2.00e-04
+iter 8960: loss 3.2308, time 4020.27ms, mfu 33.54% lr 2.00e-04
+iter 8970: loss 3.4685, time 4022.21ms, mfu 33.53% lr 2.00e-04
+iter 8980: loss 3.3668, time 4029.17ms, mfu 33.52% lr 2.00e-04
+iter 8990: loss 3.1458, time 4015.22ms, mfu 33.53% lr 2.00e-04
+
+--- Evaluating at Step 9000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:58, 56.38it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.32% (2643/10042)
+--- Finished HellaSwag Evaluation ---
+step 9000: train loss 3.3503, val loss 3.3401, HellaSwag Acc: 0.2632
+------------------------------------
+New best validation loss: 3.3401
+saving checkpoint to out/ckpt.pt
+iter 9000: loss 3.3621, time 195958.90ms, mfu 30.24% lr 2.00e-04
+iter 9010: loss 3.2811, time 4010.70ms, mfu 30.58% lr 2.00e-04
+iter 9020: loss 3.5226, time 4031.49ms, mfu 30.86% lr 2.00e-04
+iter 9030: loss 3.3887, time 4022.34ms, mfu 31.13% lr 2.00e-04
+iter 9040: loss 3.4262, time 4012.19ms, mfu 31.37% lr 2.00e-04
+iter 9050: loss 3.2635, time 4017.58ms, mfu 31.59% lr 2.00e-04
+iter 9060: loss 3.3058, time 4014.28ms, mfu 31.79% lr 2.00e-04
+iter 9070: loss 3.4428, time 4023.32ms, mfu 31.96% lr 2.00e-04
+iter 9080: loss 3.3574, time 4026.31ms, mfu 32.11% lr 2.00e-04
+iter 9090: loss 3.3392, time 4020.92ms, mfu 32.25% lr 2.00e-04
+iter 9100: loss 3.3082, time 4021.12ms, mfu 32.38% lr 2.00e-04
+iter 9110: loss 3.4315, time 4013.46ms, mfu 32.50% lr 2.00e-04
+iter 9120: loss 3.2227, time 4027.27ms, mfu 32.59% lr 2.00e-04
+iter 9130: loss 3.5335, time 4014.94ms, mfu 32.69% lr 2.00e-04
+iter 9140: loss 3.5082, time 4024.30ms, mfu 32.77% lr 2.00e-04
+iter 9150: loss 3.3713, time 4029.75ms, mfu 32.84% lr 2.00e-04
+iter 9160: loss 3.5732, time 4030.80ms, mfu 32.90% lr 2.00e-04
+iter 9170: loss 3.3358, time 4019.32ms, mfu 32.96% lr 2.00e-04
+iter 9180: loss 3.3620, time 4018.19ms, mfu 33.02% lr 2.00e-04
+iter 9190: loss 3.4395, time 4026.41ms, mfu 33.06% lr 2.00e-04
+iter 9200: loss 3.3942, time 4022.96ms, mfu 33.11% lr 2.00e-04
+iter 9210: loss 3.4438, time 4015.27ms, mfu 33.15% lr 2.00e-04
+iter 9220: loss 3.3188, time 4016.41ms, mfu 33.19% lr 2.00e-04
+iter 9230: loss 3.2323, time 4027.37ms, mfu 33.22% lr 2.00e-04
+iter 9240: loss 3.4963, time 4017.51ms, mfu 33.25% lr 2.00e-04
+iter 9250: loss 3.3548, time 2296.74ms, mfu 35.79% lr 2.00e-04
+iter 9260: loss 3.3475, time 2294.95ms, mfu 38.09% lr 2.00e-04
+iter 9270: loss 3.4968, time 2295.95ms, mfu 40.15% lr 2.00e-04
+iter 9280: loss 3.4318, time 2377.79ms, mfu 41.80% lr 2.00e-04
+iter 9290: loss 3.4730, time 2382.17ms, mfu 43.28% lr 2.00e-04
+iter 9300: loss 3.4298, time 2375.44ms, mfu 44.62% lr 2.00e-04
+iter 9310: loss 3.6565, time 2373.24ms, mfu 45.84% lr 2.00e-04
+iter 9320: loss 3.3399, time 2363.74ms, mfu 46.95% lr 2.00e-04
+iter 9330: loss 3.4455, time 4022.76ms, mfu 45.61% lr 2.00e-04
+iter 9340: loss 3.3213, time 4021.69ms, mfu 44.40% lr 2.00e-04
+iter 9350: loss 3.3646, time 4021.57ms, mfu 43.31% lr 2.00e-04
+iter 9360: loss 3.1985, time 4013.81ms, mfu 42.34% lr 2.00e-04
+iter 9370: loss 3.1340, time 4018.69ms, mfu 41.46% lr 2.00e-04
+iter 9380: loss 3.1568, time 4004.87ms, mfu 40.67% lr 2.00e-04
+iter 9390: loss 3.3636, time 4011.27ms, mfu 39.97% lr 2.00e-04
+iter 9400: loss 3.4116, time 4008.98ms, mfu 39.33% lr 2.00e-04
+iter 9410: loss 3.2881, time 4018.07ms, mfu 38.75% lr 2.00e-04
+iter 9420: loss 3.4239, time 4028.73ms, mfu 38.22% lr 2.00e-04
+iter 9430: loss 3.2470, time 4007.87ms, mfu 37.76% lr 2.00e-04
+iter 9440: loss 3.4098, time 4022.55ms, mfu 37.34% lr 2.00e-04
+iter 9450: loss 3.3226, time 4020.07ms, mfu 36.95% lr 2.00e-04
+iter 9460: loss 3.1846, time 4024.72ms, mfu 36.61% lr 2.00e-04
+iter 9470: loss 3.3605, time 4018.33ms, mfu 36.30% lr 2.00e-04
+iter 9480: loss 3.4606, time 4014.86ms, mfu 36.03% lr 2.00e-04
+iter 9490: loss 3.3255, time 4016.28ms, mfu 35.78% lr 2.00e-04
+iter 9500: loss 3.4014, time 4028.48ms, mfu 35.55% lr 2.00e-04
+iter 9510: loss 3.4127, time 4019.15ms, mfu 35.34% lr 2.00e-04
+iter 9520: loss 3.3557, time 4023.40ms, mfu 35.16% lr 2.00e-04
+iter 9530: loss 3.2401, time 4015.20ms, mfu 35.00% lr 2.00e-04
+iter 9540: loss 3.2448, time 4015.36ms, mfu 34.86% lr 2.00e-04
+iter 9550: loss 3.3891, time 4026.49ms, mfu 34.72% lr 2.00e-04
+iter 9560: loss 3.2807, time 4024.74ms, mfu 34.59% lr 2.00e-04
+iter 9570: loss 3.4141, time 4022.14ms, mfu 34.48% lr 2.00e-04
+iter 9580: loss 3.4951, time 4021.25ms, mfu 34.39% lr 2.00e-04
+iter 9590: loss 3.3770, time 4016.78ms, mfu 34.30% lr 2.00e-04
+iter 9600: loss 3.2162, time 4024.35ms, mfu 34.22% lr 2.00e-04
+iter 9610: loss 3.3145, time 4013.41ms, mfu 34.16% lr 2.00e-04
+iter 9620: loss 3.3996, time 4019.33ms, mfu 34.09% lr 2.00e-04
+iter 9630: loss 3.3458, time 4011.72ms, mfu 34.04% lr 2.00e-04
+iter 9640: loss 3.3300, time 4019.48ms, mfu 33.99% lr 2.00e-04
+iter 9650: loss 3.4031, time 4024.83ms, mfu 33.94% lr 2.00e-04
+iter 9660: loss 3.3885, time 4015.29ms, mfu 33.90% lr 2.00e-04
+iter 9670: loss 3.3079, time 4022.07ms, mfu 33.86% lr 2.00e-04
+iter 9680: loss 3.4419, time 4019.19ms, mfu 33.83% lr 2.00e-04
+iter 9690: loss 3.3317, time 4018.17ms, mfu 33.80% lr 2.00e-04
+iter 9700: loss 3.3578, time 4026.45ms, mfu 33.77% lr 2.00e-04
+iter 9710: loss 3.2805, time 4025.26ms, mfu 33.74% lr 2.00e-04
+iter 9720: loss 3.0710, time 4023.61ms, mfu 33.71% lr 2.00e-04
+iter 9730: loss 3.5023, time 4014.47ms, mfu 33.70% lr 2.00e-04
+iter 9740: loss 3.3996, time 4024.79ms, mfu 33.68% lr 2.00e-04
+iter 9750: loss 3.4877, time 4020.40ms, mfu 33.66% lr 2.00e-04
+iter 9760: loss 3.3502, time 4015.48ms, mfu 33.65% lr 2.00e-04
+iter 9770: loss 3.4923, time 4018.76ms, mfu 33.64% lr 2.00e-04
+iter 9780: loss 3.5555, time 4024.45ms, mfu 33.62% lr 2.00e-04
+iter 9790: loss 3.2647, time 4011.18ms, mfu 33.62% lr 2.00e-04
+iter 9800: loss 3.2427, time 4025.97ms, mfu 33.61% lr 2.00e-04
+iter 9810: loss 3.1948, time 4023.55ms, mfu 33.59% lr 2.00e-04
+iter 9820: loss 3.0665, time 4024.76ms, mfu 33.58% lr 2.00e-04
+iter 9830: loss 3.5020, time 4028.46ms, mfu 33.57% lr 2.00e-04
+iter 9840: loss 3.1422, time 4017.49ms, mfu 33.57% lr 2.00e-04
+iter 9850: loss 3.2546, time 4026.81ms, mfu 33.56% lr 2.00e-04
+iter 9860: loss 3.2454, time 4016.22ms, mfu 33.56% lr 2.00e-04
+iter 9870: loss 3.3393, time 4009.50ms, mfu 33.56% lr 2.00e-04
+iter 9880: loss 3.5583, time 4027.30ms, mfu 33.55% lr 2.00e-04
+iter 9890: loss 3.5032, time 4032.18ms, mfu 33.54% lr 2.00e-04
+iter 9900: loss 3.2563, time 4024.53ms, mfu 33.53% lr 2.00e-04
+iter 9910: loss 3.6548, time 4012.44ms, mfu 33.54% lr 2.00e-04
+iter 9920: loss 3.3452, time 4016.11ms, mfu 33.54% lr 2.00e-04
+iter 9930: loss 3.3677, time 4013.23ms, mfu 33.54% lr 2.00e-04
+iter 9940: loss 3.2910, time 4015.49ms, mfu 33.55% lr 2.00e-04
+iter 9950: loss 3.2207, time 4014.91ms, mfu 33.55% lr 2.00e-04
+iter 9960: loss 3.2559, time 4021.40ms, mfu 33.54% lr 2.00e-04
+iter 9970: loss 3.5207, time 4022.38ms, mfu 33.54% lr 2.00e-04
+iter 9980: loss 3.3643, time 4023.86ms, mfu 33.53% lr 2.00e-04
+iter 9990: loss 3.2809, time 4016.75ms, mfu 33.54% lr 2.00e-04
+
+--- Evaluating at Step 10000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:58, 56.15it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.44% (2655/10042)
+--- Finished HellaSwag Evaluation ---
+step 10000: train loss 3.3422, val loss 3.3383, HellaSwag Acc: 0.2644
+------------------------------------
+New best validation loss: 3.3383
+saving checkpoint to out/ckpt.pt
+iter 10000: loss 3.3670, time 196667.40ms, mfu 30.25% lr 2.00e-04
+iter 10010: loss 3.3760, time 4024.28ms, mfu 30.57% lr 2.00e-04
+iter 10020: loss 3.1200, time 4013.55ms, mfu 30.87% lr 2.00e-04
+iter 10030: loss 3.3598, time 4028.70ms, mfu 31.13% lr 2.00e-04
+iter 10040: loss 3.3025, time 4027.99ms, mfu 31.36% lr 2.00e-04
+iter 10050: loss 3.2794, time 4019.15ms, mfu 31.58% lr 2.00e-04
+iter 10060: loss 3.3996, time 4023.47ms, mfu 31.77% lr 2.00e-04
+iter 10070: loss 3.2623, time 4020.98ms, mfu 31.95% lr 2.00e-04
+iter 10080: loss 3.4307, time 4018.15ms, mfu 32.10% lr 2.00e-04
+iter 10090: loss 3.2762, time 4025.15ms, mfu 32.24% lr 2.00e-04
+iter 10100: loss 3.4043, time 4015.22ms, mfu 32.37% lr 2.00e-04
+iter 10110: loss 3.4232, time 4035.84ms, mfu 32.48% lr 2.00e-04
+iter 10120: loss 3.3249, time 4015.84ms, mfu 32.58% lr 2.00e-04
+iter 10130: loss 3.4001, time 4023.69ms, mfu 32.67% lr 2.00e-04
+iter 10140: loss 3.2855, time 4023.04ms, mfu 32.76% lr 2.00e-04
+iter 10150: loss 3.3768, time 4024.76ms, mfu 32.83% lr 2.00e-04
+iter 10160: loss 3.4536, time 4015.78ms, mfu 32.90% lr 2.00e-04
+iter 10170: loss 3.2711, time 4017.45ms, mfu 32.97% lr 2.00e-04
+iter 10180: loss 3.4176, time 4012.02ms, mfu 33.03% lr 2.00e-04
+iter 10190: loss 3.2357, time 4019.87ms, mfu 33.08% lr 2.00e-04
+iter 10200: loss 3.3404, time 4011.27ms, mfu 33.13% lr 2.00e-04
+iter 10210: loss 3.3068, time 4026.39ms, mfu 33.16% lr 2.00e-04
+iter 10220: loss 3.3182, time 4016.37ms, mfu 33.20% lr 2.00e-04
+iter 10230: loss 3.5511, time 4021.44ms, mfu 33.23% lr 2.00e-04
+iter 10240: loss 3.5176, time 2295.37ms, mfu 35.78% lr 2.00e-04
+iter 10250: loss 3.3505, time 2298.93ms, mfu 38.06% lr 2.00e-04
+iter 10260: loss 3.2748, time 2294.68ms, mfu 40.13% lr 2.00e-04
+iter 10270: loss 3.3681, time 2378.24ms, mfu 41.78% lr 2.00e-04
+iter 10280: loss 3.3530, time 2383.64ms, mfu 43.26% lr 2.00e-04
+iter 10290: loss 3.2713, time 2377.69ms, mfu 44.60% lr 2.00e-04
+iter 10300: loss 3.1933, time 2383.55ms, mfu 45.79% lr 2.00e-04
+iter 10310: loss 3.2699, time 2382.23ms, mfu 46.87% lr 2.00e-04
+iter 10320: loss 3.2868, time 4018.97ms, mfu 45.54% lr 2.00e-04
+iter 10330: loss 3.2745, time 4011.83ms, mfu 44.34% lr 2.00e-04
+iter 10340: loss 3.3687, time 4018.14ms, mfu 43.26% lr 2.00e-04
+iter 10350: loss 3.2747, time 4019.57ms, mfu 42.29% lr 2.00e-04
+iter 10360: loss 3.2993, time 4019.00ms, mfu 41.41% lr 2.00e-04
+iter 10370: loss 3.2222, time 4009.09ms, mfu 40.63% lr 2.00e-04
+iter 10380: loss 3.4122, time 4016.39ms, mfu 39.92% lr 2.00e-04
+iter 10390: loss 3.3011, time 4027.09ms, mfu 39.28% lr 2.00e-04
+iter 10400: loss 3.3947, time 4024.14ms, mfu 38.70% lr 2.00e-04
+iter 10410: loss 3.4022, time 4011.68ms, mfu 38.19% lr 2.00e-04
+iter 10420: loss 3.4765, time 4016.07ms, mfu 37.72% lr 2.00e-04
+iter 10430: loss 3.3967, time 4031.45ms, mfu 37.29% lr 2.00e-04
+iter 10440: loss 3.1190, time 4014.35ms, mfu 36.92% lr 2.00e-04
+iter 10450: loss 3.3616, time 4023.96ms, mfu 36.58% lr 2.00e-04
+iter 10460: loss 3.2497, time 4010.48ms, mfu 36.28% lr 2.00e-04
+iter 10470: loss 3.2633, time 4014.36ms, mfu 36.01% lr 2.00e-04
+iter 10480: loss 3.2425, time 4014.62ms, mfu 35.77% lr 2.00e-04
+iter 10490: loss 3.2793, time 4019.51ms, mfu 35.54% lr 2.00e-04
+iter 10500: loss 3.3240, time 4014.21ms, mfu 35.34% lr 2.00e-04
+iter 10510: loss 3.4337, time 4019.00ms, mfu 35.16% lr 2.00e-04
+iter 10520: loss 3.3035, time 4016.33ms, mfu 35.00% lr 2.00e-04
+iter 10530: loss 3.3992, time 4015.36ms, mfu 34.86% lr 2.00e-04
+iter 10540: loss 3.3443, time 4032.78ms, mfu 34.71% lr 2.00e-04
+iter 10550: loss 3.2943, time 4033.46ms, mfu 34.58% lr 2.00e-04
+iter 10560: loss 3.2606, time 4027.45ms, mfu 34.47% lr 2.00e-04
+iter 10570: loss 3.3454, time 4023.04ms, mfu 34.37% lr 2.00e-04
+iter 10580: loss 3.2894, time 4020.96ms, mfu 34.29% lr 2.00e-04
+iter 10590: loss 3.4242, time 4024.95ms, mfu 34.21% lr 2.00e-04
+iter 10600: loss 3.5241, time 4019.47ms, mfu 34.14% lr 2.00e-04
+iter 10610: loss 3.1733, time 4025.40ms, mfu 34.07% lr 2.00e-04
+iter 10620: loss 3.1499, time 4024.30ms, mfu 34.01% lr 2.00e-04
+iter 10630: loss 3.3286, time 4022.17ms, mfu 33.96% lr 2.00e-04
+iter 10640: loss 3.3825, time 4021.54ms, mfu 33.92% lr 2.00e-04
+iter 10650: loss 3.2974, time 4016.76ms, mfu 33.88% lr 2.00e-04
+iter 10660: loss 3.3941, time 4014.94ms, mfu 33.85% lr 2.00e-04
+iter 10670: loss 3.4547, time 4020.97ms, mfu 33.81% lr 2.00e-04
+iter 10680: loss 3.3786, time 4021.70ms, mfu 33.78% lr 2.00e-04
+iter 10690: loss 3.5148, time 4017.14ms, mfu 33.76% lr 2.00e-04
+iter 10700: loss 3.2981, time 4024.76ms, mfu 33.73% lr 2.00e-04
+iter 10710: loss 3.4183, time 4014.92ms, mfu 33.72% lr 2.00e-04
+iter 10720: loss 3.3343, time 4011.33ms, mfu 33.70% lr 2.00e-04
+iter 10730: loss 3.3453, time 4013.79ms, mfu 33.69% lr 2.00e-04
+iter 10740: loss 3.2480, time 4023.23ms, mfu 33.67% lr 2.00e-04
+iter 10750: loss 3.2312, time 4012.69ms, mfu 33.66% lr 2.00e-04
+iter 10760: loss 3.2197, time 4019.75ms, mfu 33.65% lr 2.00e-04
+iter 10770: loss 2.9801, time 4022.87ms, mfu 33.63% lr 2.00e-04
+iter 10780: loss 3.3097, time 4028.64ms, mfu 33.61% lr 2.00e-04
+iter 10790: loss 3.3806, time 4013.52ms, mfu 33.61% lr 2.00e-04
+iter 10800: loss 3.3075, time 4034.25ms, mfu 33.59% lr 2.00e-04
+iter 10810: loss 3.2715, time 4014.68ms, mfu 33.59% lr 2.00e-04
+iter 10820: loss 3.2826, time 4009.27ms, mfu 33.59% lr 2.00e-04
+iter 10830: loss 3.2658, time 4017.49ms, mfu 33.59% lr 2.00e-04
+iter 10840: loss 3.2029, time 4021.09ms, mfu 33.58% lr 2.00e-04
+iter 10850: loss 3.2893, time 4026.55ms, mfu 33.57% lr 2.00e-04
+iter 10860: loss 3.2435, time 4018.43ms, mfu 33.56% lr 2.00e-04
+iter 10870: loss 3.2532, time 4017.82ms, mfu 33.56% lr 2.00e-04
+iter 10880: loss 3.4582, time 4005.57ms, mfu 33.57% lr 2.00e-04
+iter 10890: loss 3.1711, time 4020.69ms, mfu 33.56% lr 2.00e-04
+iter 10900: loss 3.2323, time 4015.35ms, mfu 33.56% lr 2.00e-04
+iter 10910: loss 3.5276, time 4015.55ms, mfu 33.56% lr 2.00e-04
+iter 10920: loss 3.4320, time 4019.70ms, mfu 33.56% lr 2.00e-04
+iter 10930: loss 3.4005, time 4019.75ms, mfu 33.56% lr 2.00e-04
+iter 10940: loss 3.2820, time 4024.07ms, mfu 33.55% lr 2.00e-04
+iter 10950: loss 3.4673, time 4022.39ms, mfu 33.54% lr 2.00e-04
+iter 10960: loss 3.3739, time 4025.24ms, mfu 33.54% lr 2.00e-04
+iter 10970: loss 3.2778, time 4021.13ms, mfu 33.53% lr 2.00e-04
+iter 10980: loss 3.0921, time 4024.20ms, mfu 33.53% lr 2.00e-04
+iter 10990: loss 3.4161, time 4014.05ms, mfu 33.53% lr 2.00e-04
+
+--- Evaluating at Step 11000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:02, 55.13it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.62% (2673/10042)
+--- Finished HellaSwag Evaluation ---
+step 11000: train loss 3.3079, val loss 3.3326, HellaSwag Acc: 0.2662
+------------------------------------
+New best validation loss: 3.3326
+saving checkpoint to out/ckpt.pt
+iter 11000: loss 3.3061, time 199904.90ms, mfu 30.25% lr 2.00e-04
+iter 11010: loss 3.4729, time 4019.72ms, mfu 30.58% lr 2.00e-04
+iter 11020: loss 3.2546, time 4010.47ms, mfu 30.88% lr 2.00e-04
+iter 11030: loss 3.1968, time 4027.84ms, mfu 31.14% lr 2.00e-04
+iter 11040: loss 3.2652, time 4026.11ms, mfu 31.37% lr 2.00e-04
+iter 11050: loss 3.4496, time 4015.29ms, mfu 31.59% lr 2.00e-04
+iter 11060: loss 3.4044, time 4017.63ms, mfu 31.78% lr 2.00e-04
+iter 11070: loss 3.2509, time 4026.34ms, mfu 31.95% lr 2.00e-04
+iter 11080: loss 3.3549, time 4023.89ms, mfu 32.11% lr 2.00e-04
+iter 11090: loss 3.3675, time 4023.74ms, mfu 32.24% lr 2.00e-04
+iter 11100: loss 3.2744, time 4016.12ms, mfu 32.38% lr 2.00e-04
+iter 11110: loss 3.3605, time 4018.06ms, mfu 32.49% lr 2.00e-04
+iter 11120: loss 3.3070, time 4017.42ms, mfu 32.60% lr 2.00e-04
+iter 11130: loss 3.3546, time 4032.20ms, mfu 32.68% lr 2.00e-04
+iter 11140: loss 3.3787, time 4011.45ms, mfu 32.77% lr 2.00e-04
+iter 11150: loss 3.3707, time 4011.56ms, mfu 32.85% lr 2.00e-04
+iter 11160: loss 3.3822, time 4026.71ms, mfu 32.91% lr 2.00e-04
+iter 11170: loss 3.2727, time 4014.17ms, mfu 32.98% lr 2.00e-04
+iter 11180: loss 3.1394, time 4015.60ms, mfu 33.04% lr 2.00e-04
+iter 11190: loss 3.2807, time 4028.56ms, mfu 33.08% lr 2.00e-04
+iter 11200: loss 3.3577, time 4016.86ms, mfu 33.13% lr 2.00e-04
+iter 11210: loss 3.1924, time 4021.00ms, mfu 33.16% lr 2.00e-04
+iter 11220: loss 3.3272, time 4018.72ms, mfu 33.20% lr 2.00e-04
+iter 11230: loss 3.2612, time 2296.81ms, mfu 35.75% lr 2.00e-04
+iter 11240: loss 3.3590, time 2302.67ms, mfu 38.03% lr 2.00e-04
+iter 11250: loss 3.4894, time 2292.40ms, mfu 40.10% lr 2.00e-04
+iter 11260: loss 3.4787, time 2375.55ms, mfu 41.76% lr 2.00e-04
+iter 11270: loss 3.4074, time 2382.83ms, mfu 43.24% lr 2.00e-04
+iter 11280: loss 3.2363, time 2378.04ms, mfu 44.59% lr 2.00e-04
+iter 11290: loss 3.1937, time 2379.00ms, mfu 45.79% lr 2.00e-04
+iter 11300: loss 3.2905, time 2380.21ms, mfu 46.87% lr 2.00e-04
+iter 11310: loss 3.2586, time 4022.21ms, mfu 45.54% lr 2.00e-04
+iter 11320: loss 3.2947, time 4016.02ms, mfu 44.34% lr 2.00e-04
+iter 11330: loss 3.2927, time 4029.25ms, mfu 43.25% lr 2.00e-04
+iter 11340: loss 3.2270, time 4009.86ms, mfu 42.28% lr 2.00e-04
+iter 11350: loss 3.4032, time 4023.49ms, mfu 41.41% lr 2.00e-04
+iter 11360: loss 3.4220, time 4020.99ms, mfu 40.62% lr 2.00e-04
+iter 11370: loss 3.1694, time 4021.47ms, mfu 39.91% lr 2.00e-04
+iter 11380: loss 3.4093, time 4018.31ms, mfu 39.27% lr 2.00e-04
+iter 11390: loss 3.2173, time 4019.52ms, mfu 38.69% lr 2.00e-04
+iter 11400: loss 3.2507, time 4017.98ms, mfu 38.18% lr 2.00e-04
+iter 11410: loss 3.4090, time 4021.75ms, mfu 37.71% lr 2.00e-04
+iter 11420: loss 3.2546, time 4022.26ms, mfu 37.29% lr 2.00e-04
+iter 11430: loss 3.2247, time 4019.80ms, mfu 36.91% lr 2.00e-04
+iter 11440: loss 3.4027, time 4024.15ms, mfu 36.57% lr 2.00e-04
+iter 11450: loss 3.3757, time 4025.31ms, mfu 36.26% lr 2.00e-04
+iter 11460: loss 3.2739, time 4031.61ms, mfu 35.98% lr 2.00e-04
+iter 11470: loss 3.4485, time 4027.95ms, mfu 35.73% lr 2.00e-04
+iter 11480: loss 3.0897, time 4023.24ms, mfu 35.50% lr 2.00e-04
+iter 11490: loss 3.3872, time 4027.98ms, mfu 35.30% lr 2.00e-04
+iter 11500: loss 2.9735, time 4026.82ms, mfu 35.11% lr 2.00e-04
+iter 11510: loss 3.3779, time 4021.32ms, mfu 34.95% lr 2.00e-04
+iter 11520: loss 3.1508, time 4021.34ms, mfu 34.81% lr 2.00e-04
+iter 11530: loss 3.5275, time 4023.32ms, mfu 34.68% lr 2.00e-04
+iter 11540: loss 3.1558, time 4023.20ms, mfu 34.56% lr 2.00e-04
+iter 11550: loss 3.1542, time 4014.50ms, mfu 34.46% lr 2.00e-04
+iter 11560: loss 3.2863, time 4026.05ms, mfu 34.36% lr 2.00e-04
+iter 11570: loss 3.4256, time 4022.01ms, mfu 34.28% lr 2.00e-04
+iter 11580: loss 3.3954, time 4023.56ms, mfu 34.20% lr 2.00e-04
+iter 11590: loss 3.3992, time 4020.14ms, mfu 34.13% lr 2.00e-04
+iter 11600: loss 3.2831, time 4017.38ms, mfu 34.07% lr 2.00e-04
+iter 11610: loss 3.3504, time 4018.29ms, mfu 34.02% lr 2.00e-04
+iter 11620: loss 3.2664, time 4023.49ms, mfu 33.96% lr 2.00e-04
+iter 11630: loss 3.4010, time 4013.22ms, mfu 33.93% lr 2.00e-04
+iter 11640: loss 3.2850, time 4017.00ms, mfu 33.89% lr 2.00e-04
+iter 11650: loss 3.4567, time 4028.39ms, mfu 33.84% lr 2.00e-04
+iter 11660: loss 3.2645, time 4027.82ms, mfu 33.81% lr 2.00e-04
+iter 11670: loss 3.3312, time 4025.53ms, mfu 33.77% lr 2.00e-04
+iter 11680: loss 3.2661, time 4008.06ms, mfu 33.76% lr 2.00e-04
+iter 11690: loss 3.3331, time 4023.25ms, mfu 33.73% lr 2.00e-04
+iter 11700: loss 3.3444, time 4015.69ms, mfu 33.71% lr 2.00e-04
+iter 11710: loss 3.3332, time 4014.87ms, mfu 33.70% lr 2.00e-04
+iter 11720: loss 3.3967, time 4028.37ms, mfu 33.67% lr 2.00e-04
+iter 11730: loss 3.3240, time 4012.23ms, mfu 33.67% lr 2.00e-04
+iter 11740: loss 3.3415, time 4020.76ms, mfu 33.65% lr 2.00e-04
+iter 11750: loss 3.3466, time 4017.41ms, mfu 33.64% lr 2.00e-04
+iter 11760: loss 3.2943, time 4018.04ms, mfu 33.63% lr 2.00e-04
+iter 11770: loss 3.1621, time 4017.53ms, mfu 33.62% lr 2.00e-04
+iter 11780: loss 3.2569, time 4019.01ms, mfu 33.61% lr 2.00e-04
+iter 11790: loss 3.2320, time 4015.43ms, mfu 33.61% lr 2.00e-04
+iter 11800: loss 3.2824, time 4014.18ms, mfu 33.60% lr 2.00e-04
+iter 11810: loss 3.2970, time 4018.79ms, mfu 33.60% lr 2.00e-04
+iter 11820: loss 3.2556, time 4028.41ms, mfu 33.58% lr 2.00e-04
+iter 11830: loss 3.3743, time 4026.28ms, mfu 33.57% lr 2.00e-04
+iter 11840: loss 2.9988, time 4020.02ms, mfu 33.57% lr 2.00e-04
+iter 11850: loss 3.4874, time 4022.34ms, mfu 33.56% lr 2.00e-04
+iter 11860: loss 3.4767, time 4021.23ms, mfu 33.55% lr 2.00e-04
+iter 11870: loss 3.4827, time 4014.53ms, mfu 33.56% lr 2.00e-04
+iter 11880: loss 3.2789, time 4009.38ms, mfu 33.56% lr 2.00e-04
+iter 11890: loss 3.1891, time 4030.21ms, mfu 33.55% lr 2.00e-04
+iter 11900: loss 3.3442, time 4027.71ms, mfu 33.54% lr 2.00e-04
+iter 11910: loss 3.3487, time 4022.52ms, mfu 33.54% lr 2.00e-04
+iter 11920: loss 3.1332, time 4010.49ms, mfu 33.54% lr 2.00e-04
+iter 11930: loss 3.3199, time 4020.04ms, mfu 33.54% lr 2.00e-04
+iter 11940: loss 3.0825, time 4023.57ms, mfu 33.53% lr 2.00e-04
+iter 11950: loss 3.1222, time 4018.11ms, mfu 33.54% lr 2.00e-04
+iter 11960: loss 3.5414, time 4020.72ms, mfu 33.53% lr 2.00e-04
+iter 11970: loss 3.2493, time 4016.05ms, mfu 33.54% lr 2.00e-04
+iter 11980: loss 3.2307, time 4016.60ms, mfu 33.54% lr 2.00e-04
+iter 11990: loss 3.2528, time 4022.24ms, mfu 33.53% lr 2.00e-04
+
+--- Evaluating at Step 12000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [02:59, 56.02it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.72% (2683/10042)
+--- Finished HellaSwag Evaluation ---
+step 12000: train loss 3.2952, val loss 3.3120, HellaSwag Acc: 0.2672
+------------------------------------
+New best validation loss: 3.3120
+saving checkpoint to out/ckpt.pt
+iter 12000: loss 3.2497, time 197031.42ms, mfu 30.25% lr 2.00e-04
+iter 12010: loss 3.3000, time 4011.76ms, mfu 30.58% lr 2.00e-04
+iter 12020: loss 3.1380, time 4016.63ms, mfu 30.88% lr 2.00e-04
+iter 12030: loss 3.3584, time 4021.68ms, mfu 31.14% lr 2.00e-04
+iter 12040: loss 3.3083, time 4023.80ms, mfu 31.38% lr 2.00e-04
+iter 12050: loss 3.4694, time 4014.39ms, mfu 31.60% lr 2.00e-04
+iter 12060: loss 3.3616, time 4023.85ms, mfu 31.79% lr 2.00e-04
+iter 12070: loss 3.3078, time 4026.88ms, mfu 31.95% lr 2.00e-04
+iter 12080: loss 3.4764, time 4021.47ms, mfu 32.11% lr 2.00e-04
+iter 12090: loss 3.2530, time 4009.31ms, mfu 32.26% lr 2.00e-04
+iter 12100: loss 3.2232, time 4026.75ms, mfu 32.38% lr 2.00e-04
+iter 12110: loss 3.3493, time 4022.38ms, mfu 32.49% lr 2.00e-04
+iter 12120: loss 3.3132, time 4010.30ms, mfu 32.60% lr 2.00e-04
+iter 12130: loss 3.2883, time 4023.40ms, mfu 32.69% lr 2.00e-04
+iter 12140: loss 3.2186, time 4021.60ms, mfu 32.77% lr 2.00e-04
+iter 12150: loss 3.1717, time 4022.90ms, mfu 32.85% lr 2.00e-04
+iter 12160: loss 3.3440, time 4018.94ms, mfu 32.91% lr 2.00e-04
+iter 12170: loss 3.3541, time 4024.06ms, mfu 32.97% lr 2.00e-04
+iter 12180: loss 3.4732, time 4011.44ms, mfu 33.03% lr 2.00e-04
+iter 12190: loss 3.2866, time 4009.41ms, mfu 33.09% lr 2.00e-04
+iter 12200: loss 3.1611, time 4021.57ms, mfu 33.13% lr 2.00e-04
+iter 12210: loss 3.4828, time 4017.12ms, mfu 33.17% lr 2.00e-04
+iter 12220: loss 3.3063, time 2295.60ms, mfu 35.73% lr 2.00e-04
+iter 12230: loss 3.2182, time 2303.15ms, mfu 38.01% lr 2.00e-04
+iter 12240: loss 3.5672, time 2302.86ms, mfu 40.06% lr 2.00e-04
+iter 12250: loss 3.3895, time 2377.42ms, mfu 41.72% lr 2.00e-04
+iter 12260: loss 3.1364, time 2375.62ms, mfu 43.22% lr 2.00e-04
+iter 12270: loss 3.2190, time 2372.36ms, mfu 44.58% lr 2.00e-04
+iter 12280: loss 3.2930, time 2373.81ms, mfu 45.80% lr 2.00e-04
+iter 12290: loss 3.1203, time 2369.24ms, mfu 46.90% lr 2.00e-04
+iter 12300: loss 3.5705, time 4025.05ms, mfu 45.56% lr 2.00e-04
+iter 12310: loss 3.3133, time 4015.43ms, mfu 44.36% lr 2.00e-04
+iter 12320: loss 3.2655, time 4023.26ms, mfu 43.28% lr 2.00e-04
+iter 12330: loss 3.4034, time 4017.43ms, mfu 42.30% lr 2.00e-04
+iter 12340: loss 3.4371, time 4014.11ms, mfu 41.43% lr 2.00e-04
+iter 12350: loss 3.3024, time 4015.57ms, mfu 40.64% lr 2.00e-04
+iter 12360: loss 3.3696, time 4020.90ms, mfu 39.93% lr 2.00e-04
+iter 12370: loss 3.3415, time 4013.33ms, mfu 39.29% lr 2.00e-04
+iter 12380: loss 3.3617, time 4023.74ms, mfu 38.71% lr 2.00e-04
+iter 12390: loss 3.4450, time 4014.26ms, mfu 38.20% lr 2.00e-04
+iter 12400: loss 3.4042, time 4021.76ms, mfu 37.73% lr 2.00e-04
+iter 12410: loss 3.2046, time 4035.85ms, mfu 37.30% lr 2.00e-04
+iter 12420: loss 3.4758, time 4017.72ms, mfu 36.92% lr 2.00e-04
+iter 12430: loss 3.2154, time 4028.29ms, mfu 36.57% lr 2.00e-04
+iter 12440: loss 3.4883, time 4021.68ms, mfu 36.27% lr 2.00e-04
+iter 12450: loss 3.3472, time 4014.56ms, mfu 36.00% lr 2.00e-04
+iter 12460: loss 3.2999, time 4025.01ms, mfu 35.75% lr 2.00e-04
+iter 12470: loss 3.5012, time 4019.66ms, mfu 35.52% lr 2.00e-04
+iter 12480: loss 3.2777, time 4020.19ms, mfu 35.32% lr 2.00e-04
+iter 12490: loss 3.3303, time 4020.48ms, mfu 35.14% lr 2.00e-04
+iter 12500: loss 3.3566, time 4014.94ms, mfu 34.98% lr 2.00e-04
+iter 12510: loss 3.3253, time 4009.49ms, mfu 34.85% lr 2.00e-04
+iter 12520: loss 3.2352, time 4020.07ms, mfu 34.71% lr 2.00e-04
+iter 12530: loss 3.4787, time 4019.50ms, mfu 34.60% lr 2.00e-04
+iter 12540: loss 3.3282, time 4030.29ms, mfu 34.48% lr 2.00e-04
+iter 12550: loss 3.3333, time 4015.16ms, mfu 34.39% lr 2.00e-04
+iter 12560: loss 3.4007, time 4014.15ms, mfu 34.31% lr 2.00e-04
+iter 12570: loss 3.2592, time 4020.14ms, mfu 34.23% lr 2.00e-04
+iter 12580: loss 3.2905, time 4024.18ms, mfu 34.15% lr 2.00e-04
+iter 12590: loss 3.1069, time 4022.80ms, mfu 34.09% lr 2.00e-04
+iter 12600: loss 3.3670, time 4012.19ms, mfu 34.04% lr 2.00e-04
+iter 12610: loss 3.2634, time 4025.95ms, mfu 33.98% lr 2.00e-04
+iter 12620: loss 3.2976, time 4014.60ms, mfu 33.94% lr 2.00e-04
+iter 12630: loss 3.2144, time 4018.19ms, mfu 33.90% lr 2.00e-04
+iter 12640: loss 3.1232, time 4025.90ms, mfu 33.86% lr 2.00e-04
+iter 12650: loss 3.3450, time 4013.96ms, mfu 33.83% lr 2.00e-04
+iter 12660: loss 3.3887, time 4019.03ms, mfu 33.80% lr 2.00e-04
+iter 12670: loss 3.2491, time 4016.89ms, mfu 33.77% lr 2.00e-04
+iter 12680: loss 3.3067, time 4027.66ms, mfu 33.74% lr 2.00e-04
+iter 12690: loss 3.3605, time 4018.21ms, mfu 33.72% lr 2.00e-04
+iter 12700: loss 3.2271, time 4017.98ms, mfu 33.70% lr 2.00e-04
+iter 12710: loss 3.3708, time 4029.98ms, mfu 33.68% lr 2.00e-04
+iter 12720: loss 3.1870, time 4017.35ms, mfu 33.66% lr 2.00e-04
+iter 12730: loss 3.2374, time 4015.96ms, mfu 33.65% lr 2.00e-04
+iter 12740: loss 3.3437, time 4021.75ms, mfu 33.64% lr 2.00e-04
+iter 12750: loss 3.2771, time 4020.20ms, mfu 33.63% lr 2.00e-04
+iter 12760: loss 3.2003, time 4018.60ms, mfu 33.62% lr 2.00e-04
+iter 12770: loss 3.3948, time 4024.48ms, mfu 33.60% lr 2.00e-04
+iter 12780: loss 3.3184, time 4022.69ms, mfu 33.59% lr 2.00e-04
+iter 12790: loss 3.2495, time 4028.77ms, mfu 33.58% lr 2.00e-04
+iter 12800: loss 3.0629, time 4022.97ms, mfu 33.57% lr 2.00e-04
+iter 12810: loss 3.4043, time 4024.20ms, mfu 33.56% lr 2.00e-04
+iter 12820: loss 3.2488, time 4020.60ms, mfu 33.56% lr 2.00e-04
+iter 12830: loss 3.1499, time 4014.79ms, mfu 33.56% lr 2.00e-04
+iter 12840: loss 3.2801, time 4030.73ms, mfu 33.55% lr 2.00e-04
+iter 12850: loss 3.3491, time 4023.56ms, mfu 33.54% lr 2.00e-04
+iter 12860: loss 3.2610, time 4019.58ms, mfu 33.54% lr 2.00e-04
+iter 12870: loss 3.3378, time 4017.44ms, mfu 33.54% lr 2.00e-04
+iter 12880: loss 3.3277, time 4014.62ms, mfu 33.54% lr 2.00e-04
+iter 12890: loss 3.3966, time 4031.17ms, mfu 33.53% lr 2.00e-04
+iter 12900: loss 3.3457, time 4015.69ms, mfu 33.53% lr 2.00e-04
+iter 12910: loss 3.2762, time 4021.66ms, mfu 33.53% lr 2.00e-04
+iter 12920: loss 3.2158, time 4026.06ms, mfu 33.52% lr 2.00e-04
+iter 12930: loss 3.1944, time 4017.95ms, mfu 33.53% lr 2.00e-04
+iter 12940: loss 3.1963, time 4019.59ms, mfu 33.53% lr 2.00e-04
+iter 12950: loss 3.4260, time 4028.61ms, mfu 33.52% lr 2.00e-04
+iter 12960: loss 3.2403, time 4024.48ms, mfu 33.51% lr 2.00e-04
+iter 12970: loss 3.3554, time 4021.47ms, mfu 33.51% lr 2.00e-04
+iter 12980: loss 3.3891, time 4020.59ms, mfu 33.51% lr 2.00e-04
+iter 12990: loss 3.2077, time 4019.68ms, mfu 33.52% lr 2.00e-04
+
+--- Evaluating at Step 13000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:00, 55.53it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.37% (2648/10042)
+--- Finished HellaSwag Evaluation ---
+step 13000: train loss 3.2914, val loss 3.3007, HellaSwag Acc: 0.2637
+------------------------------------
+New best validation loss: 3.3007
+saving checkpoint to out/ckpt.pt
+iter 13000: loss 3.4728, time 198607.46ms, mfu 30.23% lr 2.00e-04
+iter 13010: loss 3.4210, time 4012.52ms, mfu 30.57% lr 2.00e-04
+iter 13020: loss 3.1413, time 4027.59ms, mfu 30.86% lr 2.00e-04
+iter 13030: loss 3.3904, time 4023.92ms, mfu 31.12% lr 2.00e-04
+iter 13040: loss 3.1873, time 4015.07ms, mfu 31.36% lr 2.00e-04
+iter 13050: loss 3.3234, time 4022.09ms, mfu 31.58% lr 2.00e-04
+iter 13060: loss 3.2365, time 4028.44ms, mfu 31.76% lr 2.00e-04
+iter 13070: loss 3.4182, time 4026.75ms, mfu 31.93% lr 2.00e-04
+iter 13080: loss 3.2000, time 4014.39ms, mfu 32.10% lr 2.00e-04
+iter 13090: loss 3.4220, time 4017.01ms, mfu 32.24% lr 2.00e-04
+iter 13100: loss 3.2982, time 4017.39ms, mfu 32.37% lr 2.00e-04
+iter 13110: loss 3.3458, time 4018.49ms, mfu 32.49% lr 2.00e-04
+iter 13120: loss 3.3450, time 4013.29ms, mfu 32.60% lr 2.00e-04
+iter 13130: loss 3.3701, time 4033.04ms, mfu 32.68% lr 2.00e-04
+iter 13140: loss 3.1792, time 4009.68ms, mfu 32.77% lr 2.00e-04
+iter 13150: loss 3.2878, time 4012.63ms, mfu 32.85% lr 2.00e-04
+iter 13160: loss 3.1301, time 4019.19ms, mfu 32.92% lr 2.00e-04
+iter 13170: loss 3.3276, time 4017.42ms, mfu 32.98% lr 2.00e-04
+iter 13180: loss 3.2661, time 4017.22ms, mfu 33.04% lr 2.00e-04
+iter 13190: loss 3.2594, time 4013.92ms, mfu 33.09% lr 2.00e-04
+iter 13200: loss 3.2185, time 4012.38ms, mfu 33.14% lr 2.00e-04
+iter 13210: loss 3.4102, time 2301.42ms, mfu 35.68% lr 2.00e-04
+iter 13220: loss 3.4205, time 2296.23ms, mfu 37.98% lr 2.00e-04
+iter 13230: loss 3.1929, time 2301.39ms, mfu 40.04% lr 2.00e-04
+iter 13240: loss 3.2726, time 2368.09ms, mfu 41.73% lr 2.00e-04
+iter 13250: loss 3.3658, time 2383.31ms, mfu 43.21% lr 2.00e-04
+iter 13260: loss 3.3123, time 2378.82ms, mfu 44.55% lr 2.00e-04
+iter 13270: loss 3.3992, time 2383.41ms, mfu 45.75% lr 2.00e-04
+iter 13280: loss 3.2352, time 2375.05ms, mfu 46.85% lr 2.00e-04
+iter 13290: loss 3.3118, time 4023.20ms, mfu 45.51% lr 2.00e-04
+iter 13300: loss 3.2930, time 4021.22ms, mfu 44.31% lr 2.00e-04
+iter 13310: loss 3.2271, time 4025.42ms, mfu 43.23% lr 2.00e-04
+iter 13320: loss 3.1592, time 4015.74ms, mfu 42.26% lr 2.00e-04
+iter 13330: loss 3.4321, time 4024.22ms, mfu 41.39% lr 2.00e-04
+iter 13340: loss 3.4099, time 4009.64ms, mfu 40.61% lr 2.00e-04
+iter 13350: loss 3.2148, time 4013.64ms, mfu 39.90% lr 2.00e-04
+iter 13360: loss 3.3540, time 4020.16ms, mfu 39.27% lr 2.00e-04
+iter 13370: loss 3.2900, time 4012.84ms, mfu 38.70% lr 2.00e-04
+iter 13380: loss 3.2667, time 4018.81ms, mfu 38.18% lr 2.00e-04
+iter 13390: loss 3.2751, time 4025.41ms, mfu 37.71% lr 2.00e-04
+iter 13400: loss 3.4446, time 4007.05ms, mfu 37.30% lr 2.00e-04
+iter 13410: loss 3.3638, time 4027.83ms, mfu 36.92% lr 2.00e-04
+iter 13420: loss 3.1121, time 4024.98ms, mfu 36.57% lr 2.00e-04
+iter 13430: loss 3.3193, time 4020.38ms, mfu 36.27% lr 2.00e-04
+iter 13440: loss 3.2908, time 4028.69ms, mfu 35.99% lr 2.00e-04
+iter 13450: loss 3.2300, time 4014.26ms, mfu 35.74% lr 2.00e-04
+iter 13460: loss 3.3162, time 4020.62ms, mfu 35.52% lr 2.00e-04
+iter 13470: loss 3.2604, time 4012.49ms, mfu 35.33% lr 2.00e-04
+iter 13480: loss 3.2164, time 4020.16ms, mfu 35.15% lr 2.00e-04
+iter 13490: loss 3.3260, time 4012.25ms, mfu 34.99% lr 2.00e-04
+iter 13500: loss 3.1899, time 4022.36ms, mfu 34.84% lr 2.00e-04
+iter 13510: loss 3.2094, time 4019.31ms, mfu 34.71% lr 2.00e-04
+iter 13520: loss 3.2934, time 4023.19ms, mfu 34.59% lr 2.00e-04
+iter 13530: loss 3.3175, time 4022.82ms, mfu 34.48% lr 2.00e-04
+iter 13540: loss 3.2769, time 4013.69ms, mfu 34.39% lr 2.00e-04
+iter 13550: loss 3.2898, time 4023.55ms, mfu 34.30% lr 2.00e-04
+iter 13560: loss 3.1730, time 4017.91ms, mfu 34.22% lr 2.00e-04
+iter 13570: loss 3.2964, time 4026.24ms, mfu 34.15% lr 2.00e-04
+iter 13580: loss 3.3524, time 4033.82ms, mfu 34.07% lr 2.00e-04
+iter 13590: loss 3.3656, time 4029.16ms, mfu 34.01% lr 2.00e-04
+iter 13600: loss 3.6127, time 4016.46ms, mfu 33.97% lr 2.00e-04
+iter 13610: loss 3.1046, time 4023.74ms, mfu 33.92% lr 2.00e-04
+iter 13620: loss 3.5579, time 4031.84ms, mfu 33.87% lr 2.00e-04
+iter 13630: loss 3.3993, time 4017.73ms, mfu 33.84% lr 2.00e-04
+iter 13640: loss 3.3171, time 4025.92ms, mfu 33.80% lr 2.00e-04
+iter 13650: loss 3.1853, time 4023.55ms, mfu 33.77% lr 2.00e-04
+iter 13660: loss 3.2664, time 4032.81ms, mfu 33.73% lr 2.00e-04
+iter 13670: loss 3.1129, time 4031.59ms, mfu 33.70% lr 2.00e-04
+iter 13680: loss 3.1981, time 4020.50ms, mfu 33.68% lr 2.00e-04
+iter 13690: loss 3.0775, time 4014.57ms, mfu 33.67% lr 2.00e-04
+iter 13700: loss 3.4629, time 4015.54ms, mfu 33.66% lr 2.00e-04
+iter 13710: loss 3.4416, time 4023.38ms, mfu 33.64% lr 2.00e-04
+iter 13720: loss 3.2175, time 4030.57ms, mfu 33.62% lr 2.00e-04
+iter 13730: loss 3.3460, time 4015.74ms, mfu 33.62% lr 2.00e-04
+iter 13740: loss 3.4684, time 4019.93ms, mfu 33.61% lr 2.00e-04
+iter 13750: loss 3.2929, time 4033.31ms, mfu 33.59% lr 2.00e-04
+iter 13760: loss 3.1731, time 4016.41ms, mfu 33.58% lr 2.00e-04
+iter 13770: loss 3.3173, time 4014.08ms, mfu 33.58% lr 2.00e-04
+iter 13780: loss 3.4239, time 4031.68ms, mfu 33.57% lr 2.00e-04
+iter 13790: loss 3.3343, time 4024.36ms, mfu 33.56% lr 2.00e-04
+iter 13800: loss 3.2450, time 4029.96ms, mfu 33.55% lr 2.00e-04
+iter 13810: loss 3.1719, time 4018.18ms, mfu 33.55% lr 2.00e-04
+iter 13820: loss 3.2715, time 4021.58ms, mfu 33.54% lr 2.00e-04
+iter 13830: loss 3.3632, time 4011.47ms, mfu 33.55% lr 2.00e-04
+iter 13840: loss 3.2425, time 4021.35ms, mfu 33.54% lr 2.00e-04
+iter 13850: loss 3.1956, time 4023.95ms, mfu 33.54% lr 2.00e-04
+iter 13860: loss 3.2261, time 4019.41ms, mfu 33.54% lr 2.00e-04
+iter 13870: loss 3.1553, time 4019.97ms, mfu 33.53% lr 2.00e-04
+iter 13880: loss 2.9917, time 4015.66ms, mfu 33.54% lr 2.00e-04
+iter 13890: loss 2.9643, time 4036.48ms, mfu 33.52% lr 2.00e-04
+iter 13900: loss 3.3602, time 4025.26ms, mfu 33.52% lr 2.00e-04
+iter 13910: loss 3.3715, time 4035.58ms, mfu 33.50% lr 2.00e-04
+iter 13920: loss 3.1552, time 4023.74ms, mfu 33.50% lr 2.00e-04
+iter 13930: loss 3.4184, time 4013.19ms, mfu 33.51% lr 2.00e-04
+iter 13940: loss 3.3569, time 4029.25ms, mfu 33.50% lr 2.00e-04
+iter 13950: loss 3.4076, time 5862.93ms, mfu 32.45% lr 2.00e-04
+iter 13960: loss 3.1258, time 4637.18ms, mfu 32.11% lr 2.00e-04
+iter 13970: loss 3.1635, time 4652.75ms, mfu 31.80% lr 2.00e-04
+iter 13980: loss 3.3455, time 4807.43ms, mfu 31.42% lr 2.00e-04
+iter 13990: loss 3.2980, time 4809.46ms, mfu 31.08% lr 2.00e-04
+
+--- Evaluating at Step 14000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [03:12, 52.15it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.62% (2673/10042)
+--- Finished HellaSwag Evaluation ---
+step 14000: train loss 3.2926, val loss 3.2832, HellaSwag Acc: 0.2662
+------------------------------------
+New best validation loss: 3.2832
+saving checkpoint to out/ckpt.pt
+iter 14000: loss 3.1069, time 213254.01ms, mfu 28.04% lr 2.00e-04
+iter 14010: loss 3.2581, time 4027.98ms, mfu 28.58% lr 2.00e-04
+iter 14020: loss 3.2071, time 4022.81ms, mfu 29.07% lr 2.00e-04
+iter 14030: loss 3.1629, time 4018.03ms, mfu 29.52% lr 2.00e-04
+iter 14040: loss 3.2989, time 4022.19ms, mfu 29.92% lr 2.00e-04
+iter 14050: loss 3.5152, time 4024.22ms, mfu 30.27% lr 2.00e-04
+iter 14060: loss 3.3974, time 4021.33ms, mfu 30.60% lr 2.00e-04
+iter 14070: loss 3.2648, time 4017.30ms, mfu 30.89% lr 2.00e-04
+iter 14080: loss 3.3679, time 4021.09ms, mfu 31.15% lr 2.00e-04
+iter 14090: loss 3.3701, time 4019.31ms, mfu 31.39% lr 2.00e-04
+iter 14100: loss 3.1603, time 4021.44ms, mfu 31.60% lr 2.00e-04
+iter 14110: loss 3.3455, time 4029.22ms, mfu 31.79% lr 2.00e-04
+iter 14120: loss 3.3356, time 4020.76ms, mfu 31.96% lr 2.00e-04
+iter 14130: loss 3.4054, time 4022.63ms, mfu 32.11% lr 2.00e-04
+iter 14140: loss 3.4471, time 4928.25ms, mfu 31.64% lr 2.00e-04
+iter 14150: loss 3.2759, time 4642.59ms, mfu 31.38% lr 2.00e-04
+iter 14160: loss 3.2575, time 4715.88ms, mfu 31.10% lr 2.00e-04
+iter 14170: loss 3.3368, time 4797.54ms, mfu 30.79% lr 2.00e-04
+iter 14180: loss 3.2464, time 4809.11ms, mfu 30.52% lr 2.00e-04
+iter 14190: loss 3.3274, time 4793.53ms, mfu 30.28% lr 2.00e-04
+iter 14200: loss 3.3652, time 3034.95ms, mfu 31.69% lr 2.00e-04
+iter 14210: loss 3.2424, time 6352.98ms, mfu 30.64% lr 2.00e-04
+iter 14220: loss 3.3290, time 6426.84ms, mfu 29.67% lr 2.00e-04
+iter 14230: loss 3.1121, time 6421.02ms, mfu 28.81% lr 2.00e-04
+iter 14240: loss 3.4315, time 6432.28ms, mfu 28.02% lr 2.00e-04
+iter 14250: loss 3.2305, time 6427.11ms, mfu 27.31% lr 2.00e-04
+iter 14260: loss 3.1760, time 6428.91ms, mfu 26.68% lr 2.00e-04
+iter 14270: loss 3.2595, time 8028.89ms, mfu 25.69% lr 2.00e-04
+iter 14280: loss 3.2690, time 8055.07ms, mfu 24.79% lr 2.00e-04
+iter 14290: loss 3.1368, time 8032.43ms, mfu 23.99% lr 2.00e-04
+iter 14300: loss 3.3430, time 8033.77ms, mfu 23.27% lr 2.00e-04
+iter 14310: loss 3.1356, time 8035.18ms, mfu 22.62% lr 2.00e-04
+iter 14320: loss 2.9686, time 8047.59ms, mfu 22.03% lr 2.00e-04
+iter 14330: loss 3.3874, time 8018.92ms, mfu 21.51% lr 2.00e-04
+iter 14340: loss 3.2368, time 8029.07ms, mfu 21.04% lr 2.00e-04
+iter 14350: loss 3.2261, time 8037.97ms, mfu 20.61% lr 2.00e-04
+iter 14360: loss 3.3228, time 8024.71ms, mfu 20.23% lr 2.00e-04
+iter 14370: loss 3.1870, time 8020.03ms, mfu 19.89% lr 2.00e-04
+iter 14380: loss 3.2958, time 8024.22ms, mfu 19.58% lr 2.00e-04
+iter 14390: loss 3.4143, time 8026.38ms, mfu 19.30% lr 2.00e-04
+iter 14400: loss 3.2508, time 8040.00ms, mfu 19.04% lr 2.00e-04
+iter 14410: loss 3.2873, time 8046.19ms, mfu 18.81% lr 2.00e-04
+iter 14420: loss 3.3588, time 8014.83ms, mfu 18.61% lr 2.00e-04
+iter 14430: loss 3.3570, time 8031.17ms, mfu 18.43% lr 2.00e-04
+iter 14440: loss 3.0153, time 8028.28ms, mfu 18.27% lr 2.00e-04
+iter 14450: loss 3.2238, time 8023.68ms, mfu 18.12% lr 2.00e-04
+iter 14460: loss 3.3258, time 8054.13ms, mfu 17.98% lr 2.00e-04
+iter 14470: loss 3.4401, time 8025.85ms, mfu 17.86% lr 2.00e-04
+iter 14480: loss 3.3349, time 8040.01ms, mfu 17.75% lr 2.00e-04
+iter 14490: loss 3.3212, time 8034.25ms, mfu 17.65% lr 2.00e-04
+iter 14500: loss 3.2519, time 8056.55ms, mfu 17.56% lr 2.00e-04
+iter 14510: loss 3.4019, time 8027.66ms, mfu 17.48% lr 2.00e-04
+iter 14520: loss 3.3763, time 8024.94ms, mfu 17.41% lr 2.00e-04
+iter 14530: loss 3.2488, time 8038.47ms, mfu 17.35% lr 2.00e-04
+iter 14540: loss 3.3553, time 8038.48ms, mfu 17.29% lr 2.00e-04
+iter 14550: loss 3.6837, time 8022.47ms, mfu 17.24% lr 2.00e-04
+iter 14560: loss 3.4104, time 8020.18ms, mfu 17.20% lr 2.00e-04
+iter 14570: loss 3.1673, time 8035.85ms, mfu 17.15% lr 2.00e-04
+iter 14580: loss 3.2838, time 8025.28ms, mfu 17.12% lr 2.00e-04
+iter 14590: loss 3.1540, time 8035.66ms, mfu 17.08% lr 2.00e-04
+iter 14600: loss 3.2220, time 8045.78ms, mfu 17.05% lr 2.00e-04
+iter 14610: loss 3.3417, time 8048.80ms, mfu 17.02% lr 2.00e-04
+iter 14620: loss 3.1960, time 8060.42ms, mfu 16.99% lr 2.00e-04
+iter 14630: loss 3.3819, time 8042.81ms, mfu 16.97% lr 2.00e-04
+iter 14640: loss 3.1031, time 8060.58ms, mfu 16.94% lr 2.00e-04
+iter 14650: loss 3.3726, time 8034.20ms, mfu 16.92% lr 2.00e-04
+iter 14660: loss 3.0999, time 8060.64ms, mfu 16.90% lr 2.00e-04
+iter 14670: loss 3.4283, time 8025.31ms, mfu 16.89% lr 2.00e-04
+iter 14680: loss 3.5490, time 8029.56ms, mfu 16.88% lr 2.00e-04
+iter 14690: loss 3.3928, time 8060.64ms, mfu 16.86% lr 2.00e-04
+iter 14700: loss 3.2586, time 8058.84ms, mfu 16.85% lr 2.00e-04
+iter 14710: loss 3.3248, time 8059.27ms, mfu 16.84% lr 2.00e-04
+iter 14720: loss 3.3086, time 8060.06ms, mfu 16.83% lr 2.00e-04
+iter 14730: loss 3.2861, time 8059.23ms, mfu 16.82% lr 2.00e-04
+iter 14740: loss 3.3284, time 8059.09ms, mfu 16.81% lr 2.00e-04
+iter 14750: loss 3.1665, time 8057.23ms, mfu 16.80% lr 2.00e-04
+iter 14760: loss 3.0477, time 8060.91ms, mfu 16.79% lr 2.00e-04
+iter 14770: loss 3.0447, time 8060.61ms, mfu 16.78% lr 2.00e-04
+iter 14780: loss 3.3847, time 8054.82ms, mfu 16.78% lr 2.00e-04
+iter 14790: loss 3.2134, time 8045.36ms, mfu 16.77% lr 2.00e-04
+iter 14800: loss 3.1129, time 8025.48ms, mfu 16.78% lr 2.00e-04
+iter 14810: loss 3.3225, time 8021.28ms, mfu 16.78% lr 2.00e-04
+iter 14820: loss 3.3935, time 8033.59ms, mfu 16.78% lr 2.00e-04
+iter 14830: loss 3.2048, time 8057.54ms, mfu 16.77% lr 2.00e-04
+iter 14840: loss 3.2496, time 8056.67ms, mfu 16.77% lr 2.00e-04
+iter 14850: loss 3.1097, time 8046.47ms, mfu 16.77% lr 2.00e-04
+iter 14860: loss 3.2601, time 8040.90ms, mfu 16.77% lr 2.00e-04
+iter 14870: loss 3.1651, time 8029.30ms, mfu 16.77% lr 2.00e-04
+iter 14880: loss 3.3734, time 8018.50ms, mfu 16.77% lr 2.00e-04
+iter 14890: loss 3.3301, time 8022.30ms, mfu 16.77% lr 2.00e-04
+iter 14900: loss 3.3318, time 8024.97ms, mfu 16.78% lr 2.00e-04
+iter 14910: loss 3.4933, time 8046.86ms, mfu 16.77% lr 2.00e-04
+iter 14920: loss 3.3552, time 8039.72ms, mfu 16.77% lr 2.00e-04
+iter 14930: loss 3.5763, time 8016.25ms, mfu 16.78% lr 2.00e-04
+iter 14940: loss 3.4051, time 8028.15ms, mfu 16.78% lr 2.00e-04
+iter 14950: loss 3.3638, time 8032.62ms, mfu 16.78% lr 2.00e-04
+iter 14960: loss 3.3729, time 8032.08ms, mfu 16.78% lr 2.00e-04
+iter 14970: loss 3.3045, time 8038.08ms, mfu 16.78% lr 2.00e-04
+iter 14980: loss 3.2160, time 8017.69ms, mfu 16.78% lr 2.00e-04
+iter 14990: loss 3.1757, time 8019.02ms, mfu 16.78% lr 2.00e-04
+
+--- Evaluating at Step 15000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [06:57, 24.03it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.32% (2643/10042)
+--- Finished HellaSwag Evaluation ---
+step 15000: train loss 3.2779, val loss 3.2930, HellaSwag Acc: 0.2632
+------------------------------------
+saving checkpoint to out/ckpt.pt
+iter 15000: loss 3.2239, time 453671.12ms, mfu 15.13% lr 2.00e-04
+iter 15010: loss 3.2848, time 8027.73ms, mfu 15.30% lr 2.00e-04
+iter 15020: loss 3.2534, time 8030.54ms, mfu 15.45% lr 2.00e-04
+iter 15030: loss 3.2033, time 8065.55ms, mfu 15.57% lr 2.00e-04
+iter 15040: loss 3.4620, time 8059.37ms, mfu 15.69% lr 2.00e-04
+iter 15050: loss 3.4035, time 8061.50ms, mfu 15.79% lr 2.00e-04
+iter 15060: loss 3.2288, time 8059.75ms, mfu 15.88% lr 2.00e-04
+iter 15070: loss 3.2634, time 8013.31ms, mfu 15.98% lr 2.00e-04
+iter 15080: loss 3.4540, time 8045.94ms, mfu 16.05% lr 2.00e-04
+iter 15090: loss 3.4193, time 8038.40ms, mfu 16.12% lr 2.00e-04
+iter 15100: loss 3.2485, time 8038.66ms, mfu 16.19% lr 2.00e-04
+iter 15110: loss 3.2198, time 8062.04ms, mfu 16.24% lr 2.00e-04
+iter 15120: loss 3.2595, time 8028.56ms, mfu 16.30% lr 2.00e-04
+iter 15130: loss 3.2060, time 8035.88ms, mfu 16.34% lr 2.00e-04
+iter 15140: loss 3.4921, time 5007.96ms, mfu 17.40% lr 2.00e-04
+iter 15150: loss 3.1924, time 4660.53ms, mfu 18.55% lr 2.00e-04
+iter 15160: loss 3.3837, time 4713.68ms, mfu 19.55% lr 2.00e-04
+iter 15170: loss 3.2417, time 4807.79ms, mfu 20.40% lr 2.00e-04
+iter 15180: loss 3.2914, time 4791.85ms, mfu 21.17% lr 2.00e-04
+iter 15190: loss 3.3353, time 4538.50ms, mfu 22.03% lr 2.00e-04
+iter 15200: loss 3.2003, time 3008.68ms, mfu 24.30% lr 2.00e-04
+iter 15210: loss 3.1770, time 6333.97ms, mfu 24.00% lr 2.00e-04
+iter 15220: loss 3.3156, time 6440.15ms, mfu 23.69% lr 2.00e-04
+iter 15230: loss 3.2726, time 6406.08ms, mfu 23.43% lr 2.00e-04
+iter 15240: loss 3.1660, time 6421.15ms, mfu 23.18% lr 2.00e-04
+iter 15250: loss 3.3280, time 6406.80ms, mfu 22.97% lr 2.00e-04
+iter 15260: loss 3.3160, time 8019.27ms, mfu 22.35% lr 2.00e-04
+iter 15270: loss 3.2001, time 8039.95ms, mfu 21.79% lr 2.00e-04
+iter 15280: loss 3.3054, time 8037.48ms, mfu 21.29% lr 2.00e-04
+iter 15290: loss 3.3088, time 8022.21ms, mfu 20.84% lr 2.00e-04
+iter 15300: loss 3.1973, time 8020.32ms, mfu 20.44% lr 2.00e-04
+iter 15310: loss 3.4104, time 8036.77ms, mfu 20.07% lr 2.00e-04
+iter 15320: loss 3.2141, time 8039.76ms, mfu 19.74% lr 2.00e-04
+iter 15330: loss 3.3257, time 8045.16ms, mfu 19.44% lr 2.00e-04
+iter 15340: loss 3.3526, time 8048.58ms, mfu 19.17% lr 2.00e-04
+iter 15350: loss 3.3625, time 8019.59ms, mfu 18.93% lr 2.00e-04
+iter 15360: loss 3.3716, time 8026.06ms, mfu 18.72% lr 2.00e-04
+iter 15370: loss 3.2557, time 8035.36ms, mfu 18.52% lr 2.00e-04
+iter 15380: loss 3.1313, time 8017.01ms, mfu 18.35% lr 2.00e-04
+iter 15390: loss 3.3393, time 8025.84ms, mfu 18.20% lr 2.00e-04
+iter 15400: loss 3.4170, time 8057.77ms, mfu 18.05% lr 2.00e-04
+iter 15410: loss 3.4679, time 8060.92ms, mfu 17.92% lr 2.00e-04
+iter 15420: loss 3.2837, time 8058.98ms, mfu 17.80% lr 2.00e-04
+iter 15430: loss 3.2930, time 8059.31ms, mfu 17.69% lr 2.00e-04
+iter 15440: loss 3.4555, time 8060.59ms, mfu 17.59% lr 2.00e-04
+iter 15450: loss 3.3743, time 8038.80ms, mfu 17.51% lr 2.00e-04
+iter 15460: loss 3.3559, time 8024.58ms, mfu 17.44% lr 2.00e-04
+iter 15470: loss 3.3026, time 8061.48ms, mfu 17.37% lr 2.00e-04
+iter 15480: loss 3.2888, time 8038.36ms, mfu 17.31% lr 2.00e-04
+iter 15490: loss 3.4713, time 8025.35ms, mfu 17.25% lr 2.00e-04
+iter 15500: loss 3.3056, time 8016.67ms, mfu 17.21% lr 2.00e-04
+iter 15510: loss 3.0702, time 8028.61ms, mfu 17.17% lr 2.00e-04
+iter 15520: loss 3.2760, time 8034.76ms, mfu 17.13% lr 2.00e-04
+iter 15530: loss 3.4275, time 8031.17ms, mfu 17.09% lr 2.00e-04
+iter 15540: loss 3.2229, time 8053.04ms, mfu 17.06% lr 2.00e-04
+iter 15550: loss 3.3161, time 8028.71ms, mfu 17.03% lr 2.00e-04
+iter 15560: loss 3.0813, time 8031.78ms, mfu 17.00% lr 2.00e-04
+iter 15570: loss 3.2579, time 8061.41ms, mfu 16.98% lr 2.00e-04
+iter 15580: loss 3.2027, time 8027.74ms, mfu 16.96% lr 2.00e-04
+iter 15590: loss 3.2548, time 8048.90ms, mfu 16.94% lr 2.00e-04
+iter 15600: loss 3.2774, time 8025.67ms, mfu 16.92% lr 2.00e-04
+iter 15610: loss 3.0368, time 8052.78ms, mfu 16.90% lr 2.00e-04
+iter 15620: loss 3.2085, time 8052.43ms, mfu 16.89% lr 2.00e-04
+iter 15630: loss 3.1992, time 8026.23ms, mfu 16.88% lr 2.00e-04
+iter 15640: loss 3.3835, time 8057.39ms, mfu 16.86% lr 2.00e-04
+iter 15650: loss 3.4553, time 8058.62ms, mfu 16.85% lr 2.00e-04
+iter 15660: loss 3.2534, time 8027.83ms, mfu 16.84% lr 2.00e-04
+iter 15670: loss 3.2891, time 8032.18ms, mfu 16.83% lr 2.00e-04
+iter 15680: loss 3.3330, time 8033.16ms, mfu 16.83% lr 2.00e-04
+iter 15690: loss 2.8540, time 8015.28ms, mfu 16.83% lr 2.00e-04
+iter 15700: loss 3.1487, time 8047.34ms, mfu 16.82% lr 2.00e-04
+iter 15710: loss 3.4469, time 8051.08ms, mfu 16.81% lr 2.00e-04
+iter 15720: loss 3.2516, time 8029.84ms, mfu 16.81% lr 2.00e-04
+iter 15730: loss 3.2476, time 8033.43ms, mfu 16.80% lr 2.00e-04
+iter 15740: loss 3.2129, time 8029.64ms, mfu 16.80% lr 2.00e-04
+iter 15750: loss 3.2923, time 8059.68ms, mfu 16.79% lr 2.00e-04
+iter 15760: loss 3.3923, time 8035.84ms, mfu 16.79% lr 2.00e-04
+iter 15770: loss 3.0253, time 8024.93ms, mfu 16.79% lr 2.00e-04
+iter 15780: loss 3.4722, time 8024.30ms, mfu 16.79% lr 2.00e-04
+iter 15790: loss 3.3398, time 8026.82ms, mfu 16.79% lr 2.00e-04
+iter 15800: loss 3.1880, time 8027.12ms, mfu 16.79% lr 2.00e-04
+iter 15810: loss 3.0199, time 8033.05ms, mfu 16.79% lr 2.00e-04
+iter 15820: loss 3.3279, time 8030.70ms, mfu 16.79% lr 2.00e-04
+iter 15830: loss 3.1693, time 8022.82ms, mfu 16.79% lr 2.00e-04
+iter 15840: loss 3.3255, time 8025.21ms, mfu 16.79% lr 2.00e-04
+iter 15850: loss 3.2207, time 8033.38ms, mfu 16.79% lr 2.00e-04
+iter 15860: loss 3.2046, time 8029.07ms, mfu 16.79% lr 2.00e-04
+iter 15870: loss 3.3621, time 8015.97ms, mfu 16.79% lr 2.00e-04
+iter 15880: loss 3.2043, time 8030.02ms, mfu 16.79% lr 2.00e-04
+iter 15890: loss 3.1343, time 8044.83ms, mfu 16.79% lr 2.00e-04
+iter 15900: loss 3.2155, time 8038.16ms, mfu 16.78% lr 2.00e-04
+iter 15910: loss 3.1595, time 8048.51ms, mfu 16.78% lr 2.00e-04
+iter 15920: loss 3.0732, time 8038.00ms, mfu 16.78% lr 2.00e-04
+iter 15930: loss 3.3330, time 8036.59ms, mfu 16.78% lr 2.00e-04
+iter 15940: loss 3.1810, time 8031.93ms, mfu 16.78% lr 2.00e-04
+iter 15950: loss 3.3838, time 8034.52ms, mfu 16.78% lr 2.00e-04
+iter 15960: loss 3.4597, time 8021.94ms, mfu 16.78% lr 2.00e-04
+iter 15970: loss 3.3270, time 8039.02ms, mfu 16.78% lr 2.00e-04
+iter 15980: loss 3.2306, time 8033.91ms, mfu 16.78% lr 2.00e-04
+iter 15990: loss 3.3427, time 8017.51ms, mfu 16.78% lr 2.00e-04
+
+--- Evaluating at Step 16000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [06:57, 24.03it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.92% (2703/10042)
+--- Finished HellaSwag Evaluation ---
+step 16000: train loss 3.2773, val loss 3.2919, HellaSwag Acc: 0.2692
+------------------------------------
+saving checkpoint to out/ckpt.pt
+iter 16000: loss 3.1638, time 453516.12ms, mfu 15.13% lr 2.00e-04
+iter 16010: loss 3.1868, time 8030.10ms, mfu 15.30% lr 2.00e-04
+iter 16020: loss 3.3763, time 8045.62ms, mfu 15.44% lr 2.00e-04
+iter 16030: loss 3.3647, time 8024.34ms, mfu 15.58% lr 2.00e-04
+iter 16040: loss 3.4169, time 8036.57ms, mfu 15.70% lr 2.00e-04
+iter 16050: loss 3.3592, time 8021.45ms, mfu 15.81% lr 2.00e-04
+iter 16060: loss 3.0729, time 8034.99ms, mfu 15.90% lr 2.00e-04
+iter 16070: loss 3.4061, time 8043.91ms, mfu 15.99% lr 2.00e-04
+iter 16080: loss 3.4465, time 8027.94ms, mfu 16.07% lr 2.00e-04
+iter 16090: loss 3.1126, time 8041.96ms, mfu 16.14% lr 2.00e-04
+iter 16100: loss 3.2863, time 8018.91ms, mfu 16.20% lr 2.00e-04
+iter 16110: loss 3.1634, time 8047.98ms, mfu 16.26% lr 2.00e-04
+iter 16120: loss 3.3014, time 8024.69ms, mfu 16.31% lr 2.00e-04
+iter 16130: loss 3.1742, time 8028.24ms, mfu 16.36% lr 2.00e-04
+iter 16140: loss 3.3917, time 6119.22ms, mfu 16.92% lr 2.00e-04
+iter 16150: loss 3.2752, time 4631.92ms, mfu 18.14% lr 2.00e-04
+iter 16160: loss 3.4536, time 4689.02ms, mfu 19.20% lr 2.00e-04
+iter 16170: loss 3.3892, time 4786.37ms, mfu 20.10% lr 2.00e-04
+iter 16180: loss 3.2520, time 4815.04ms, mfu 20.89% lr 2.00e-04
+iter 16190: loss 3.2274, time 3025.96ms, mfu 23.25% lr 2.00e-04
+iter 16200: loss 3.2313, time 3039.52ms, mfu 25.36% lr 2.00e-04
+iter 16210: loss 3.4046, time 6354.39ms, mfu 24.94% lr 2.00e-04
+iter 16220: loss 3.2441, time 6411.12ms, mfu 24.55% lr 2.00e-04
+iter 16230: loss 3.0966, time 6409.00ms, mfu 24.20% lr 2.00e-04
+iter 16240: loss 3.4218, time 6421.31ms, mfu 23.88% lr 2.00e-04
+iter 16250: loss 3.2572, time 6437.41ms, mfu 23.58% lr 2.00e-04
+iter 16260: loss 3.1094, time 8032.72ms, mfu 22.90% lr 2.00e-04
+iter 16270: loss 3.4164, time 8028.91ms, mfu 22.29% lr 2.00e-04
+iter 16280: loss 3.3620, time 8024.75ms, mfu 21.74% lr 2.00e-04
+iter 16290: loss 3.3785, time 8040.38ms, mfu 21.24% lr 2.00e-04
+iter 16300: loss 3.3600, time 8041.18ms, mfu 20.79% lr 2.00e-04
+iter 16310: loss 3.1853, time 8038.42ms, mfu 20.39% lr 2.00e-04
+iter 16320: loss 3.2610, time 8033.11ms, mfu 20.03% lr 2.00e-04
+iter 16330: loss 3.4399, time 8060.79ms, mfu 19.70% lr 2.00e-04
+iter 16340: loss 3.4316, time 8049.56ms, mfu 19.40% lr 2.00e-04
+iter 16350: loss 3.3898, time 8048.14ms, mfu 19.14% lr 2.00e-04
+iter 16360: loss 3.1177, time 8040.50ms, mfu 18.90% lr 2.00e-04
+iter 16370: loss 3.3021, time 8056.85ms, mfu 18.68% lr 2.00e-04
+iter 16380: loss 3.3507, time 8030.34ms, mfu 18.49% lr 2.00e-04
+iter 16390: loss 3.2951, time 8032.21ms, mfu 18.32% lr 2.00e-04
+iter 16400: loss 3.2237, time 8039.78ms, mfu 18.16% lr 2.00e-04
+iter 16410: loss 3.3093, time 8018.10ms, mfu 18.03% lr 2.00e-04
+iter 16420: loss 3.3250, time 8046.26ms, mfu 17.90% lr 2.00e-04
+iter 16430: loss 3.1290, time 8023.08ms, mfu 17.79% lr 2.00e-04
+iter 16440: loss 3.3316, time 8042.53ms, mfu 17.69% lr 2.00e-04
+iter 16450: loss 3.1838, time 8032.44ms, mfu 17.60% lr 2.00e-04
+iter 16460: loss 3.2179, time 8022.75ms, mfu 17.52% lr 2.00e-04
+iter 16470: loss 3.2369, time 8029.37ms, mfu 17.44% lr 2.00e-04
+iter 16480: loss 3.3350, time 8029.47ms, mfu 17.38% lr 2.00e-04
+iter 16490: loss 3.2555, time 8022.18ms, mfu 17.32% lr 2.00e-04
+iter 16500: loss 3.3251, time 8048.37ms, mfu 17.26% lr 2.00e-04
+iter 16510: loss 3.3205, time 8059.16ms, mfu 17.21% lr 2.00e-04
+iter 16520: loss 3.1670, time 8026.65ms, mfu 17.17% lr 2.00e-04
+iter 16530: loss 3.4014, time 8029.39ms, mfu 17.13% lr 2.00e-04
+iter 16540: loss 2.9763, time 8022.71ms, mfu 17.09% lr 2.00e-04
+iter 16550: loss 3.2694, time 8041.29ms, mfu 17.06% lr 2.00e-04
+iter 16560: loss 3.1661, time 8038.41ms, mfu 17.03% lr 2.00e-04
+iter 16570: loss 3.4778, time 8049.02ms, mfu 17.00% lr 2.00e-04
+iter 16580: loss 3.0703, time 8029.54ms, mfu 16.98% lr 2.00e-04
+iter 16590: loss 3.3585, time 8038.80ms, mfu 16.96% lr 2.00e-04
+iter 16600: loss 3.2437, time 8034.41ms, mfu 16.94% lr 2.00e-04
+iter 16610: loss 3.1383, time 8022.84ms, mfu 16.93% lr 2.00e-04
+iter 16620: loss 3.5280, time 8033.47ms, mfu 16.91% lr 2.00e-04
+iter 16630: loss 3.2140, time 8023.97ms, mfu 16.90% lr 2.00e-04
+iter 16640: loss 3.6538, time 8045.21ms, mfu 16.88% lr 2.00e-04
+iter 16650: loss 3.1063, time 8012.85ms, mfu 16.88% lr 2.00e-04
+iter 16660: loss 3.3094, time 8042.11ms, mfu 16.86% lr 2.00e-04
+iter 16670: loss 3.2839, time 8043.95ms, mfu 16.85% lr 2.00e-04
+iter 16680: loss 3.3064, time 8038.71ms, mfu 16.84% lr 2.00e-04
+iter 16690: loss 3.3379, time 8038.01ms, mfu 16.84% lr 2.00e-04
+iter 16700: loss 3.0440, time 8032.41ms, mfu 16.83% lr 2.00e-04
+iter 16710: loss 3.3245, time 8038.29ms, mfu 16.82% lr 2.00e-04
+iter 16720: loss 3.1763, time 8024.83ms, mfu 16.82% lr 2.00e-04
+iter 16730: loss 3.2557, time 8040.44ms, mfu 16.81% lr 2.00e-04
+iter 16740: loss 3.4094, time 8020.89ms, mfu 16.81% lr 2.00e-04
+iter 16750: loss 3.2408, time 8019.86ms, mfu 16.81% lr 2.00e-04
+iter 16760: loss 3.3208, time 8033.40ms, mfu 16.81% lr 2.00e-04
+iter 16770: loss 3.2023, time 8046.65ms, mfu 16.80% lr 2.00e-04
+iter 16780: loss 3.1441, time 8041.72ms, mfu 16.80% lr 2.00e-04
+iter 16790: loss 3.4727, time 8028.69ms, mfu 16.80% lr 2.00e-04
+iter 16800: loss 3.3104, time 8037.82ms, mfu 16.79% lr 2.00e-04
+iter 16810: loss 3.2688, time 8022.65ms, mfu 16.79% lr 2.00e-04
+iter 16820: loss 3.2421, time 8045.51ms, mfu 16.79% lr 2.00e-04
+iter 16830: loss 3.2677, time 8026.73ms, mfu 16.79% lr 2.00e-04
+iter 16840: loss 3.1340, time 8033.81ms, mfu 16.79% lr 2.00e-04
+iter 16850: loss 3.2639, time 8033.36ms, mfu 16.79% lr 2.00e-04
+iter 16860: loss 3.2345, time 8038.98ms, mfu 16.78% lr 2.00e-04
+iter 16870: loss 3.3280, time 8028.91ms, mfu 16.78% lr 2.00e-04
+iter 16880: loss 3.4237, time 8031.34ms, mfu 16.78% lr 2.00e-04
+iter 16890: loss 3.2385, time 8033.92ms, mfu 16.78% lr 2.00e-04
+iter 16900: loss 3.1760, time 8021.43ms, mfu 16.78% lr 2.00e-04
+iter 16910: loss 3.4980, time 8034.23ms, mfu 16.78% lr 2.00e-04
+iter 16920: loss 3.2236, time 8040.75ms, mfu 16.78% lr 2.00e-04
+iter 16930: loss 3.1415, time 8024.65ms, mfu 16.78% lr 2.00e-04
+iter 16940: loss 3.1091, time 8054.80ms, mfu 16.78% lr 2.00e-04
+iter 16950: loss 3.2064, time 8045.48ms, mfu 16.77% lr 2.00e-04
+iter 16960: loss 3.2421, time 8008.40ms, mfu 16.78% lr 2.00e-04
+iter 16970: loss 3.2628, time 8037.96ms, mfu 16.78% lr 2.00e-04
+iter 16980: loss 3.1556, time 8029.27ms, mfu 16.78% lr 2.00e-04
+iter 16990: loss 3.3448, time 8018.86ms, mfu 16.78% lr 2.00e-04
+
+--- Evaluating at Step 17000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [06:58, 24.02it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.81% (2692/10042)
+--- Finished HellaSwag Evaluation ---
+step 17000: train loss 3.2649, val loss 3.2730, HellaSwag Acc: 0.2681
+------------------------------------
+New best validation loss: 3.2730
+saving checkpoint to out/ckpt.pt
+iter 17000: loss 3.0697, time 453835.80ms, mfu 15.13% lr 2.00e-04
+iter 17010: loss 3.2933, time 8058.42ms, mfu 15.29% lr 2.00e-04
+iter 17020: loss 3.2626, time 8068.03ms, mfu 15.43% lr 2.00e-04
+iter 17030: loss 3.1064, time 8060.30ms, mfu 15.56% lr 2.00e-04
+iter 17040: loss 3.3370, time 8061.46ms, mfu 15.68% lr 2.00e-04
+iter 17050: loss 3.2253, time 8048.24ms, mfu 15.78% lr 2.00e-04
+iter 17060: loss 3.3164, time 8024.13ms, mfu 15.88% lr 2.00e-04
+iter 17070: loss 3.1792, time 8042.49ms, mfu 15.97% lr 2.00e-04
+iter 17080: loss 3.1153, time 8038.63ms, mfu 16.05% lr 2.00e-04
+iter 17090: loss 3.3132, time 8059.48ms, mfu 16.12% lr 2.00e-04
+iter 17100: loss 3.2509, time 8017.25ms, mfu 16.19% lr 2.00e-04
+iter 17110: loss 3.2813, time 8042.67ms, mfu 16.24% lr 2.00e-04
+iter 17120: loss 3.4180, time 8021.86ms, mfu 16.30% lr 2.00e-04
+iter 17130: loss 3.3322, time 8026.93ms, mfu 16.35% lr 2.00e-04
+iter 17140: loss 3.1662, time 6132.60ms, mfu 16.91% lr 2.00e-04
+iter 17150: loss 3.2889, time 4633.10ms, mfu 18.13% lr 2.00e-04
+iter 17160: loss 3.2060, time 4709.99ms, mfu 19.18% lr 2.00e-04
+iter 17170: loss 3.2002, time 4798.52ms, mfu 20.07% lr 2.00e-04
+iter 17180: loss 3.2159, time 4791.93ms, mfu 20.87% lr 2.00e-04
+iter 17190: loss 3.1312, time 3010.23ms, mfu 23.26% lr 2.00e-04
+iter 17200: loss 3.2700, time 3019.60ms, mfu 25.40% lr 2.00e-04
+iter 17210: loss 3.1585, time 6365.22ms, mfu 24.98% lr 2.00e-04
+iter 17220: loss 3.2563, time 6425.82ms, mfu 24.58% lr 2.00e-04
+iter 17230: loss 3.3214, time 6433.69ms, mfu 24.21% lr 2.00e-04
+iter 17240: loss 3.2098, time 6426.08ms, mfu 23.89% lr 2.00e-04
+iter 17250: loss 3.2999, time 6415.08ms, mfu 23.60% lr 2.00e-04
+iter 17260: loss 3.2083, time 8041.20ms, mfu 22.92% lr 2.00e-04
+iter 17270: loss 3.4172, time 8046.43ms, mfu 22.30% lr 2.00e-04
+iter 17280: loss 3.2079, time 8045.05ms, mfu 21.74% lr 2.00e-04
+iter 17290: loss 2.9792, time 8033.71ms, mfu 21.25% lr 2.00e-04
+iter 17300: loss 3.1692, time 8061.13ms, mfu 20.79% lr 2.00e-04
+iter 17310: loss 3.4268, time 8060.65ms, mfu 20.39% lr 2.00e-04
+iter 17320: loss 3.2327, time 8053.94ms, mfu 20.02% lr 2.00e-04
+iter 17330: loss 3.3124, time 8039.19ms, mfu 19.69% lr 2.00e-04
+iter 17340: loss 3.3932, time 8027.50ms, mfu 19.40% lr 2.00e-04
+iter 17350: loss 3.2114, time 8025.65ms, mfu 19.14% lr 2.00e-04
+iter 17360: loss 3.2359, time 8069.06ms, mfu 18.90% lr 2.00e-04
+iter 17370: loss 2.9320, time 8032.20ms, mfu 18.69% lr 2.00e-04
+iter 17380: loss 3.4009, time 8028.78ms, mfu 18.50% lr 2.00e-04
+iter 17390: loss 3.1311, time 8029.39ms, mfu 18.32% lr 2.00e-04
+iter 17400: loss 3.2312, time 8024.21ms, mfu 18.17% lr 2.00e-04
+iter 17410: loss 3.2074, time 8050.87ms, mfu 18.03% lr 2.00e-04
+iter 17420: loss 3.2754, time 8034.97ms, mfu 17.90% lr 2.00e-04
+iter 17430: loss 3.2435, time 8024.67ms, mfu 17.79% lr 2.00e-04
+iter 17440: loss 2.9882, time 8050.59ms, mfu 17.69% lr 2.00e-04
+iter 17450: loss 3.3317, time 8041.45ms, mfu 17.59% lr 2.00e-04
+iter 17460: loss 3.2567, time 8044.14ms, mfu 17.51% lr 2.00e-04
+iter 17470: loss 3.1213, time 8054.95ms, mfu 17.43% lr 2.00e-04
+iter 17480: loss 3.2861, time 8029.39ms, mfu 17.37% lr 2.00e-04
+iter 17490: loss 3.1753, time 8059.05ms, mfu 17.30% lr 2.00e-04
+iter 17500: loss 3.3028, time 8020.48ms, mfu 17.25% lr 2.00e-04
+iter 17510: loss 3.1667, time 8029.39ms, mfu 17.20% lr 2.00e-04
+iter 17520: loss 3.5026, time 8031.97ms, mfu 17.16% lr 2.00e-04
+iter 17530: loss 3.2962, time 8044.76ms, mfu 17.12% lr 2.00e-04
+iter 17540: loss 3.3971, time 8054.77ms, mfu 17.08% lr 2.00e-04
+iter 17550: loss 3.3154, time 8031.39ms, mfu 17.05% lr 2.00e-04
+iter 17560: loss 3.1742, time 8017.84ms, mfu 17.03% lr 2.00e-04
+iter 17570: loss 3.3219, time 8037.12ms, mfu 17.00% lr 2.00e-04
+iter 17580: loss 3.2249, time 8036.42ms, mfu 16.98% lr 2.00e-04
+iter 17590: loss 3.3296, time 8036.40ms, mfu 16.96% lr 2.00e-04
+iter 17600: loss 3.2411, time 8044.81ms, mfu 16.94% lr 2.00e-04
+iter 17610: loss 3.1059, time 8040.98ms, mfu 16.92% lr 2.00e-04
+iter 17620: loss 3.3196, time 8021.65ms, mfu 16.91% lr 2.00e-04
+iter 17630: loss 3.2164, time 6016.98ms, mfu 17.46% lr 2.00e-04
+iter 17640: loss 3.3345, time 6025.15ms, mfu 17.95% lr 2.00e-04
+iter 17650: loss 3.2403, time 6006.45ms, mfu 18.40% lr 2.00e-04
+iter 17660: loss 3.2253, time 6025.35ms, mfu 18.79% lr 2.00e-04
+iter 17670: loss 3.0259, time 6347.21ms, mfu 19.04% lr 2.00e-04
+iter 17680: loss 3.1939, time 6336.26ms, mfu 19.26% lr 2.00e-04
+iter 17690: loss 3.2408, time 6418.39ms, mfu 19.43% lr 2.00e-04
+iter 17700: loss 3.3053, time 6432.23ms, mfu 19.58% lr 2.00e-04
+iter 17710: loss 3.1938, time 6420.82ms, mfu 19.72% lr 2.00e-04
+iter 17720: loss 3.1656, time 6426.01ms, mfu 19.85% lr 2.00e-04
+iter 17730: loss 3.0124, time 6427.03ms, mfu 19.96% lr 2.00e-04
+iter 17740: loss 3.2812, time 8013.26ms, mfu 19.65% lr 2.00e-04
+iter 17750: loss 3.1748, time 8028.52ms, mfu 19.36% lr 2.00e-04
+iter 17760: loss 3.3262, time 8024.72ms, mfu 19.10% lr 2.00e-04
+iter 17770: loss 3.0968, time 8019.02ms, mfu 18.87% lr 2.00e-04
+iter 17780: loss 3.2212, time 8032.17ms, mfu 18.66% lr 2.00e-04
+iter 17790: loss 3.3024, time 8017.41ms, mfu 18.48% lr 2.00e-04
+iter 17800: loss 3.3300, time 8014.82ms, mfu 18.31% lr 2.00e-04
+iter 17810: loss 3.3304, time 8024.28ms, mfu 18.16% lr 2.00e-04
+iter 17820: loss 3.2597, time 8040.17ms, mfu 18.02% lr 2.00e-04
+iter 17830: loss 3.2954, time 8034.78ms, mfu 17.90% lr 2.00e-04
+iter 17840: loss 3.5257, time 8016.26ms, mfu 17.79% lr 2.00e-04
+iter 17850: loss 3.3026, time 8018.29ms, mfu 17.69% lr 2.00e-04
+iter 17860: loss 3.2142, time 8031.59ms, mfu 17.60% lr 2.00e-04
+iter 17870: loss 3.1137, time 8049.87ms, mfu 17.51% lr 2.00e-04
+iter 17880: loss 3.2281, time 8023.97ms, mfu 17.44% lr 2.00e-04
+iter 17890: loss 3.3201, time 8027.53ms, mfu 17.37% lr 2.00e-04
+iter 17900: loss 3.2528, time 8022.33ms, mfu 17.32% lr 2.00e-04
+iter 17910: loss 3.1380, time 8017.98ms, mfu 17.27% lr 2.00e-04
+iter 17920: loss 3.1716, time 8038.18ms, mfu 17.22% lr 2.00e-04
+iter 17930: loss 3.2012, time 8034.23ms, mfu 17.17% lr 2.00e-04
+iter 17940: loss 3.2754, time 8060.66ms, mfu 17.13% lr 2.00e-04
+iter 17950: loss 3.2394, time 8027.40ms, mfu 17.09% lr 2.00e-04
+iter 17960: loss 3.1538, time 8019.95ms, mfu 17.06% lr 2.00e-04
+iter 17970: loss 3.2430, time 8031.88ms, mfu 17.03% lr 2.00e-04
+iter 17980: loss 3.2743, time 8059.68ms, mfu 17.00% lr 2.00e-04
+iter 17990: loss 3.4067, time 8033.08ms, mfu 16.98% lr 2.00e-04
+
+--- Evaluating at Step 18000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [06:57, 24.04it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 26.88% (2699/10042)
+--- Finished HellaSwag Evaluation ---
+step 18000: train loss 3.2511, val loss 3.2641, HellaSwag Acc: 0.2688
+------------------------------------
+New best validation loss: 3.2641
+saving checkpoint to out/ckpt.pt
+iter 18000: loss 3.2138, time 453322.24ms, mfu 15.31% lr 2.00e-04
+iter 18010: loss 3.2461, time 8014.37ms, mfu 15.46% lr 2.00e-04
+iter 18020: loss 3.2816, time 8042.26ms, mfu 15.59% lr 2.00e-04
+iter 18030: loss 3.2276, time 8032.00ms, mfu 15.71% lr 2.00e-04
+iter 18040: loss 2.8261, time 8036.01ms, mfu 15.82% lr 2.00e-04
+iter 18050: loss 3.2628, time 8038.77ms, mfu 15.91% lr 2.00e-04
+iter 18060: loss 3.0824, time 8039.93ms, mfu 16.00% lr 2.00e-04
+iter 18070: loss 3.5634, time 8041.56ms, mfu 16.07% lr 2.00e-04
+iter 18080: loss 3.1202, time 8024.25ms, mfu 16.14% lr 2.00e-04
+iter 18090: loss 3.2694, time 8027.83ms, mfu 16.21% lr 2.00e-04
+iter 18100: loss 3.3227, time 8029.25ms, mfu 16.27% lr 2.00e-04
+iter 18110: loss 3.3033, time 8028.21ms, mfu 16.32% lr 2.00e-04
+iter 18120: loss 3.3066, time 8010.35ms, mfu 16.37% lr 2.00e-04
+iter 18130: loss 3.4256, time 8029.26ms, mfu 16.41% lr 2.00e-04
+iter 18140: loss 3.1408, time 6098.35ms, mfu 16.98% lr 2.00e-04
+iter 18150: loss 3.1247, time 4620.21ms, mfu 18.20% lr 2.00e-04
+iter 18160: loss 3.2389, time 4680.59ms, mfu 19.26% lr 2.00e-04
+iter 18170: loss 3.4122, time 4769.45ms, mfu 20.16% lr 2.00e-04
+iter 18180: loss 3.2542, time 4781.80ms, mfu 20.96% lr 2.00e-04
+iter 18190: loss 3.3555, time 4779.88ms, mfu 21.68% lr 2.00e-04
+iter 18200: loss 3.2410, time 4781.77ms, mfu 22.33% lr 2.00e-04
+iter 18210: loss 3.3131, time 8027.48ms, mfu 21.78% lr 2.00e-04
+iter 18220: loss 3.1688, time 8015.19ms, mfu 21.28% lr 2.00e-04
+iter 18230: loss 3.1312, time 8059.85ms, mfu 20.82% lr 2.00e-04
+iter 18240: loss 3.2640, time 8059.98ms, mfu 20.41% lr 2.00e-04
+iter 18250: loss 3.1563, time 8059.56ms, mfu 20.04% lr 2.00e-04
+iter 18260: loss 3.3818, time 8046.61ms, mfu 19.72% lr 2.00e-04
+iter 18270: loss 3.5253, time 8040.85ms, mfu 19.42% lr 2.00e-04
+iter 18280: loss 3.4223, time 8038.78ms, mfu 19.15% lr 2.00e-04
+iter 18290: loss 3.4331, time 8020.41ms, mfu 18.92% lr 2.00e-04
+iter 18300: loss 3.3198, time 8025.18ms, mfu 18.71% lr 2.00e-04
+iter 18310: loss 2.9516, time 8018.45ms, mfu 18.52% lr 2.00e-04
+iter 18320: loss 3.2152, time 8011.88ms, mfu 18.35% lr 2.00e-04
+iter 18330: loss 3.2593, time 8029.76ms, mfu 18.19% lr 2.00e-04
+iter 18340: loss 3.1976, time 8059.19ms, mfu 18.04% lr 2.00e-04
+iter 18350: loss 3.3977, time 8044.47ms, mfu 17.91% lr 2.00e-04
+iter 18360: loss 3.3496, time 8015.68ms, mfu 17.80% lr 2.00e-04
+iter 18370: loss 3.2559, time 8039.23ms, mfu 17.70% lr 2.00e-04
+iter 18380: loss 3.3487, time 8038.21ms, mfu 17.61% lr 2.00e-04
+iter 18390: loss 3.2862, time 7999.76ms, mfu 17.53% lr 2.00e-04
+iter 18400: loss 3.1381, time 8019.28ms, mfu 17.46% lr 2.00e-04
+iter 18410: loss 3.3603, time 8049.57ms, mfu 17.39% lr 2.00e-04
+iter 18420: loss 3.1924, time 8039.44ms, mfu 17.32% lr 2.00e-04
+iter 18430: loss 3.3641, time 8033.30ms, mfu 17.27% lr 2.00e-04
+iter 18440: loss 3.2429, time 8041.09ms, mfu 17.22% lr 2.00e-04
+iter 18450: loss 3.2064, time 8037.64ms, mfu 17.17% lr 2.00e-04
+iter 18460: loss 3.3552, time 8024.51ms, mfu 17.13% lr 2.00e-04
+iter 18470: loss 3.1802, time 8029.35ms, mfu 17.10% lr 2.00e-04
+iter 18480: loss 3.2209, time 8035.22ms, mfu 17.07% lr 2.00e-04
+iter 18490: loss 3.4009, time 8027.14ms, mfu 17.04% lr 2.00e-04
+iter 18500: loss 3.2465, time 8030.30ms, mfu 17.01% lr 2.00e-04
+iter 18510: loss 3.0783, time 8036.42ms, mfu 16.99% lr 2.00e-04
+iter 18520: loss 3.4112, time 8041.18ms, mfu 16.97% lr 2.00e-04
+iter 18530: loss 3.3200, time 8038.76ms, mfu 16.95% lr 2.00e-04
+iter 18540: loss 3.3452, time 8014.10ms, mfu 16.93% lr 2.00e-04
+iter 18550: loss 3.3721, time 8026.61ms, mfu 16.92% lr 2.00e-04
+iter 18560: loss 3.2577, time 8019.72ms, mfu 16.91% lr 2.00e-04
+iter 18570: loss 3.1167, time 8043.87ms, mfu 16.89% lr 2.00e-04
+iter 18580: loss 3.4210, time 8007.33ms, mfu 16.88% lr 2.00e-04
+iter 18590: loss 3.2522, time 8046.93ms, mfu 16.87% lr 2.00e-04
+iter 18600: loss 3.1363, time 8047.48ms, mfu 16.86% lr 2.00e-04
+iter 18610: loss 3.5394, time 8017.47ms, mfu 16.85% lr 2.00e-04
+iter 18620: loss 3.3448, time 8015.58ms, mfu 16.85% lr 2.00e-04
+iter 18630: loss 3.3729, time 8037.19ms, mfu 16.84% lr 2.00e-04
+iter 18640: loss 3.3207, time 8026.63ms, mfu 16.84% lr 2.00e-04
+iter 18650: loss 3.3620, time 8028.71ms, mfu 16.83% lr 2.00e-04
+iter 18660: loss 3.1708, time 8034.69ms, mfu 16.82% lr 2.00e-04
+iter 18670: loss 3.4414, time 6354.98ms, mfu 17.26% lr 2.00e-04
+iter 18680: loss 3.2326, time 6339.98ms, mfu 17.66% lr 2.00e-04
+iter 18690: loss 3.2469, time 6428.12ms, mfu 17.99% lr 2.00e-04
+iter 18700: loss 3.1741, time 6433.31ms, mfu 18.29% lr 2.00e-04
+iter 18710: loss 3.1120, time 6417.85ms, mfu 18.56% lr 2.00e-04
+iter 18720: loss 3.0581, time 6416.16ms, mfu 18.80% lr 2.00e-04
+iter 18730: loss 3.3660, time 6413.80ms, mfu 19.02% lr 2.00e-04
+iter 18740: loss 3.2726, time 8038.17ms, mfu 18.80% lr 2.00e-04
+iter 18750: loss 3.0381, time 8058.00ms, mfu 18.59% lr 2.00e-04
+iter 18760: loss 3.4415, time 8043.39ms, mfu 18.41% lr 2.00e-04
+iter 18770: loss 3.2978, time 8046.76ms, mfu 18.24% lr 2.00e-04
+iter 18780: loss 3.1996, time 8037.64ms, mfu 18.09% lr 2.00e-04
+iter 18790: loss 3.3170, time 8040.39ms, mfu 17.96% lr 2.00e-04
+iter 18800: loss 3.1466, time 8050.95ms, mfu 17.84% lr 2.00e-04
+iter 18810: loss 3.2807, time 7429.21ms, mfu 17.87% lr 2.00e-04
+iter 18820: loss 3.1042, time 6325.78ms, mfu 18.21% lr 2.00e-04
+iter 18830: loss 3.3755, time 6329.44ms, mfu 18.52% lr 2.00e-04
+iter 18840: loss 3.2987, time 6412.68ms, mfu 18.77% lr 2.00e-04
+iter 18850: loss 3.1648, time 7816.77ms, mfu 18.62% lr 2.00e-04
+iter 18860: loss 3.1094, time 6338.53ms, mfu 18.88% lr 2.00e-04
+iter 18870: loss 3.3012, time 6342.57ms, mfu 19.12% lr 2.00e-04
+iter 18880: loss 3.1938, time 6409.07ms, mfu 19.31% lr 2.00e-04
+iter 18890: loss 3.2055, time 6413.32ms, mfu 19.48% lr 2.00e-04
+iter 18900: loss 3.0981, time 6406.73ms, mfu 19.63% lr 2.00e-04
+iter 18910: loss 3.0817, time 6415.34ms, mfu 19.77% lr 2.00e-04
+iter 18920: loss 3.4049, time 6021.64ms, mfu 20.03% lr 2.00e-04
+iter 18930: loss 3.1195, time 6017.87ms, mfu 20.27% lr 2.00e-04
+iter 18940: loss 3.2384, time 6010.69ms, mfu 20.48% lr 2.00e-04
+iter 18950: loss 3.5214, time 6009.71ms, mfu 20.68% lr 2.00e-04
+iter 18960: loss 3.4030, time 6020.25ms, mfu 20.85% lr 2.00e-04
+iter 18970: loss 3.3562, time 6012.38ms, mfu 21.00% lr 2.00e-04
+iter 18980: loss 3.2535, time 7830.31ms, mfu 20.62% lr 2.00e-04
+iter 18990: loss 3.3618, time 7685.27ms, mfu 20.32% lr 2.00e-04
+
+--- Evaluating at Step 19000 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [05:30, 30.35it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 27.28% (2739/10042)
+--- Finished HellaSwag Evaluation ---
+step 19000: train loss 3.2536, val loss 3.2519, HellaSwag Acc: 0.2728
+------------------------------------
+New best validation loss: 3.2519
+saving checkpoint to out/ckpt.pt
+iter 19000: loss 3.1662, time 360375.28ms, mfu 18.32% lr 2.00e-04
+iter 19010: loss 3.1044, time 7741.11ms, mfu 18.23% lr 2.00e-04
+iter 19020: loss 3.1789, time 7747.33ms, mfu 18.15% lr 2.00e-04
+iter 19030: loss 3.2276, time 7732.32ms, mfu 18.07% lr 2.00e-04
+iter 19040: loss 3.2821, time 7740.23ms, mfu 18.01% lr 2.00e-04
+iter 19050: loss 3.1281, time 7767.22ms, mfu 17.94% lr 2.00e-04
+iter 19060: loss 3.2379, time 7809.62ms, mfu 17.87% lr 2.00e-04
+iter 19070: loss 3.2025, time 7757.28ms, mfu 17.82% lr 2.00e-04
+Traceback (most recent call last):
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 631, in <module>
+    logits, loss = model(X, Y)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/parallel/distributed.py", line 1643, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/parallel/distributed.py", line 1459, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/model.py", line 338, in forward
+    x = block(x)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/model.py", line 193, in forward
+    attn_output = self.attn(self.ln_1(x))
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/model.py", line 116, in forward
+    q, k, v  = self.c_attn(x).split(self.embed_dim, dim=2)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+KeyboardInterrupt
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 631, in <module>
+[rank0]:     logits, loss = model(X, Y)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/parallel/distributed.py", line 1643, in forward
+[rank0]:     else self._run_ddp_forward(*inputs, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/parallel/distributed.py", line 1459, in _run_ddp_forward
+[rank0]:     return self.module(*inputs, **kwargs)  # type: ignore[index]
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/model.py", line 338, in forward
+[rank0]:     x = block(x)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/model.py", line 193, in forward
+[rank0]:     attn_output = self.attn(self.ln_1(x))
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/model.py", line 116, in forward
+[rank0]:     q, k, v  = self.c_attn(x).split(self.embed_dim, dim=2)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/nn/modules/linear.py", line 125, in forward
+[rank0]:     return F.linear(input, self.weight, self.bias)
+[rank0]: KeyboardInterrupt

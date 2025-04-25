@@ -1,0 +1,40 @@
+
+Starting training loop from iteration 0...
+
+--- Evaluating at Step 0 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 10042it [04:56, 33.89it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+HellaSwag Accuracy: 23.86% (2396/10042)
+--- Finished HellaSwag Evaluation ---
+step 0: train loss 10.9783, val loss 10.9765, HellaSwag Acc: 0.2386
+------------------------------------
+New best validation loss: 10.9765
+Traceback (most recent call last):
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 664, in <module>
+    scaler.step(optimizer)
+  File "/usr/lib/python3/dist-packages/torch/amp/grad_scaler.py", line 380, in step
+    return optimizer.step(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/optim/optimizer.py", line 493, in wrapper
+    out = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/optim/sgd.py", line 198, in step
+    g_prime = self.k_val * torch.tanh(alpha_new * g_norm)
+AttributeError: 'DynamicAlphaGrad' object has no attribute 'k_val'
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 664, in <module>
+[rank0]:     scaler.step(optimizer)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/amp/grad_scaler.py", line 380, in step
+[rank0]:     return optimizer.step(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/optim/optimizer.py", line 493, in wrapper
+[rank0]:     out = func(*args, **kwargs)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+[rank0]:     return func(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/optim/sgd.py", line 198, in step
+[rank0]:     g_prime = self.k_val * torch.tanh(alpha_new * g_norm)
+[rank0]: AttributeError: 'DynamicAlphaGrad' object has no attribute 'k_val'

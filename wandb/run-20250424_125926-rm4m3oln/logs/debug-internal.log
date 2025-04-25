@@ -1,0 +1,13 @@
+{"time":"2025-04-24T12:59:26.981298072Z","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/ubuntu/LMA_GPT_Nano/wandb/run-20250424_125926-rm4m3oln/logs/debug-core.log"}
+{"time":"2025-04-24T12:59:27.132510336Z","level":"INFO","msg":"created new stream","id":"rm4m3oln"}
+{"time":"2025-04-24T12:59:27.13254208Z","level":"INFO","msg":"stream: started","id":"rm4m3oln"}
+{"time":"2025-04-24T12:59:27.132552289Z","level":"INFO","msg":"writer: Do: started","stream_id":"rm4m3oln"}
+{"time":"2025-04-24T12:59:27.132560513Z","level":"INFO","msg":"handler: started","stream_id":"rm4m3oln"}
+{"time":"2025-04-24T12:59:27.132579745Z","level":"INFO","msg":"sender: started","stream_id":"rm4m3oln"}
+{"time":"2025-04-24T12:59:27.278298589Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-24T21:38:57.578997859Z","level":"INFO","msg":"api: retrying HTTP error","status":500,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/rm4m3oln/file_stream","body":"{\"error\":\"context deadline exceeded\"}"}
+{"time":"2025-04-24T22:42:26.298520476Z","level":"INFO","msg":"api: retrying HTTP error","status":500,"url":"https://api.wandb.ai/files/soham4001a-collins-aerospace/owt/rm4m3oln/file_stream","body":"{\"error\":\"context deadline exceeded\"}"}
+{"time":"2025-04-25T02:20:55.787266821Z","level":"INFO","msg":"stream: closing","id":"rm4m3oln"}
+{"time":"2025-04-25T02:20:55.787298662Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-25T02:20:55.78734231Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-04-25T02:20:56.091029018Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}

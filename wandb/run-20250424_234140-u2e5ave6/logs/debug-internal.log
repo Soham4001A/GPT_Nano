@@ -1,0 +1,10 @@
+{"time":"2025-04-24T23:41:40.763284647Z","level":"INFO","msg":"stream: starting","core version":"0.19.9","symlink path":"/home/ubuntu/LMA_GPT_Nano/wandb/run-20250424_234140-u2e5ave6/logs/debug-core.log"}
+{"time":"2025-04-24T23:41:40.919123325Z","level":"INFO","msg":"created new stream","id":"u2e5ave6"}
+{"time":"2025-04-24T23:41:40.919156446Z","level":"INFO","msg":"stream: started","id":"u2e5ave6"}
+{"time":"2025-04-24T23:41:40.919169854Z","level":"INFO","msg":"writer: Do: started","stream_id":"u2e5ave6"}
+{"time":"2025-04-24T23:41:40.919190334Z","level":"INFO","msg":"handler: started","stream_id":"u2e5ave6"}
+{"time":"2025-04-24T23:41:40.919172894Z","level":"INFO","msg":"sender: started","stream_id":"u2e5ave6"}
+{"time":"2025-04-24T23:41:41.082949958Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-04-24T23:42:38.178035776Z","level":"INFO","msg":"stream: closing","id":"u2e5ave6"}
+{"time":"2025-04-24T23:42:38.178063937Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-04-24T23:42:38.178132481Z","level":"INFO","msg":"Stopped system monitor"}

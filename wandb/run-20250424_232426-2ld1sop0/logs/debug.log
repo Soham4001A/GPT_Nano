@@ -1,0 +1,22 @@
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_setup.py:_flush():67] Current SDK version is 0.19.9
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_setup.py:_flush():67] Configure stats pid to 42187
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_setup.py:_flush():67] Loading settings from /home/ubuntu/.config/wandb/settings
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_setup.py:_flush():67] Loading settings from /home/ubuntu/LMA_GPT_Nano/wandb/settings
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_setup.py:_flush():67] Loading settings from environment variables
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:setup_run_log_directory():662] Logging user logs to /home/ubuntu/LMA_GPT_Nano/wandb/run-20250424_232426-2ld1sop0/logs/debug.log
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:setup_run_log_directory():663] Logging internal logs to /home/ubuntu/LMA_GPT_Nano/wandb/run-20250424_232426-2ld1sop0/logs/debug-internal.log
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:init():781] calling init triggers
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:init():786] wandb.init called with sweep_config: {}
+config: {'AlphaGRAD': True, 'out_dir': 'out', 'eval_interval': 1000, 'log_interval': 10, 'eval_iters': 200, 'eval_only': False, 'always_save_checkpoint': True, 'init_from': 'scratch', 'wandb_log': True, 'wandb_project': 'owt', 'wandb_run_name': 'G-LMA', 'dataset': 'openwebtext', 'gradient_accumulation_steps': 40, 'batch_size': 12, 'block_size': 1024, 'n_layer': 12, 'user_config': 'reduc_2', 'n_head': 16, 'd_reduction_factor': 2, 'n_embd': 768, 'dropout': 0.0, 'bias': True, 'use_gated_reduction': False, 'learning_rate': 0.0004, 'max_iters': 600000, 'weight_decay': 0.1, 'beta1': 0.9, 'beta2': 0.95, 'grad_clip': 1.0, 'decay_lr': True, 'warmup_iters': 2000, 'lr_decay_iters': 600000, 'min_lr': 6e-05, 'backend': 'nccl', 'device': 'cuda', 'dtype': 'bfloat16', 'compile': False, 'hellaswag': True, 'hellaswag_path': 'data/hellaswag/hellaswag_val.jsonl', 'gating_d_new': None, '_wandb': {}}
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:init():809] starting backend
+2025-04-24 23:24:26,165 INFO    MainThread:42187 [wandb_init.py:init():813] sending inform_init request
+2025-04-24 23:24:26,167 INFO    MainThread:42187 [backend.py:_multiprocessing_setup():101] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2025-04-24 23:24:26,167 INFO    MainThread:42187 [wandb_init.py:init():823] backend started and connected
+2025-04-24 23:24:26,168 INFO    MainThread:42187 [wandb_init.py:init():915] updated telemetry
+2025-04-24 23:24:26,170 INFO    MainThread:42187 [wandb_init.py:init():939] communicating run to backend with 90.0 second timeout
+2025-04-24 23:24:26,521 INFO    MainThread:42187 [wandb_init.py:init():1014] starting run threads in backend
+2025-04-24 23:24:26,609 INFO    MainThread:42187 [wandb_run.py:_console_start():2454] atexit reg
+2025-04-24 23:24:26,609 INFO    MainThread:42187 [wandb_run.py:_redirect():2306] redirect: wrap_raw
+2025-04-24 23:24:26,609 INFO    MainThread:42187 [wandb_run.py:_redirect():2371] Wrapping output streams.
+2025-04-24 23:24:26,610 INFO    MainThread:42187 [wandb_run.py:_redirect():2394] Redirects installed.
+2025-04-24 23:24:26,610 INFO    MainThread:42187 [wandb_init.py:init():1056] run started, returning control to user process

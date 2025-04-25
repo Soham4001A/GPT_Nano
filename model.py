@@ -533,7 +533,7 @@ class GPT(nn.Module):
         # Instantiate the AlphaGrad optimizer with the crafted groups
         # Ensure AlphaGrad is correctly imported
         try:
-            from optim.sgd import AlphaGrad, DynamicAlphaGrad # Adjust path if necessary
+            from optim.sgd import AlphaGrad, DynamicAlphaGrad, DAG # Adjust path if necessary
         except ImportError:
             print("ERROR: Could not import AlphaGrad. Make sure optim/sgd.py exists and is accessible.")
             raise
@@ -541,14 +541,36 @@ class GPT(nn.Module):
         # Pass the list of dictionaries directly.
         # The main 'lr' in the constructor becomes a default if not specified in a group.
         #optimizer = AlphaGrad(param_groups_for_alphagrad, lr=learning_rate)
-        optimizer = DynamicAlphaGrad(
+        # optimizer = DynamicAlphaGrad(
+        #     param_groups_for_alphagrad,
+        #     momentum=0.9,             # optional
+        #     k_val = 2.5,
+        #     hyper=dict(               # optional overrides
+        #         p_star=0.08,
+        #         rho=0.02,
+        #     ),
+        # )
+
+        optimizer = DAG(
             param_groups_for_alphagrad,
-            lr=1e-4,
-            momentum=0.9,             # optional
-            weight_decay=1e-4,        # optional
-            hyper=dict(               # optional overrides
-                p_star=0.08,
-                rho=0.02,
+            lr=learning_rate,          # global defaults
+            momentum=0.9,
+            dampening=0.0,
+            k_val=2.0, 
+            nesterov=False,
+            # --- α-controller knobs (optional) ---
+            hyper=dict(
+                p_star=0.08,           # target 8 % saturation
+                rho=0.02,              # α-EMA speed
+                # tau, beta, eta … keep library defaults unless you want to tune
+            ),
+            # --- RMS-shrink knobs (optional) ---
+            shrink=dict(
+                lambda_rms=0.3,        # when RMS hits 30 % of baseline → s_min
+                s_min=0.1,             # floor for the tanh curve
+                gamma=1.0,             # linear roll-off; >1 = steeper
+                ema_beta=0.98,
+                warmup_steps=500,      # collect baseline RMS₀ for 500 steps
             ),
         )
 

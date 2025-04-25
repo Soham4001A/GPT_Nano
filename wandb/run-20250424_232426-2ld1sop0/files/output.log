@@ -1,0 +1,39 @@
+
+Starting training loop from iteration 0...
+
+--- Evaluating at Step 0 ---
+
+--- Running HellaSwag Evaluation ---
+Evaluating HellaSwag from data/hellaswag/hellaswag_val.jsonl...
+DEBUG: Device for HellaSwag evaluation: cuda
+DEBUG: Converting model to float32 for HellaSwag evaluation.
+HellaSwag Eval: 4309it [02:57, 24.23it/s]
+DEBUG: Restoring original parameter dtypes after HellaSwag evaluation.
+Traceback (most recent call last):
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 571, in <module>
+    losses = estimate_loss(model) # estimate_loss sets model.eval() and back to .train()
+  File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/train.py", line 509, in estimate_loss
+    hellaswag_acc = evaluate_hellaswag(raw_eval_model, enc, hellaswag_path)
+  File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/ubuntu/LMA_GPT_Nano/model.py", line 880, in evaluate_hellaswag
+    pred_norm = get_most_likely_row(tokens, mask_t, logits)
+  File "/home/ubuntu/LMA_GPT_Nano/model.py", line 654, in get_most_likely_row
+    def get_most_likely_row(tokens, mask, logits):
+KeyboardInterrupt
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 571, in <module>
+[rank0]:     losses = estimate_loss(model) # estimate_loss sets model.eval() and back to .train()
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+[rank0]:     return func(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/train.py", line 509, in estimate_loss
+[rank0]:     hellaswag_acc = evaluate_hellaswag(raw_eval_model, enc, hellaswag_path)
+[rank0]:   File "/usr/lib/python3/dist-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+[rank0]:     return func(*args, **kwargs)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/model.py", line 880, in evaluate_hellaswag
+[rank0]:     pred_norm = get_most_likely_row(tokens, mask_t, logits)
+[rank0]:   File "/home/ubuntu/LMA_GPT_Nano/model.py", line 654, in get_most_likely_row
+[rank0]:     def get_most_likely_row(tokens, mask, logits):
+[rank0]: KeyboardInterrupt
